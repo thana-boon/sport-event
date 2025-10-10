@@ -17,7 +17,7 @@ if (!$yearId) {
   include __DIR__ . '/../includes/footer.php'; exit;
 }
 
-// 1) นักเรียนทั้งหมด (ปีนี้)
+// 1) นักเรียนทั้งหมด (ปีนี้)testtest
 $stTotal = $pdo->prepare("SELECT COUNT(*) FROM students WHERE year_id=?");
 $stTotal->execute([$yearId]);
 $totalStudents = (int)$stTotal->fetchColumn();
