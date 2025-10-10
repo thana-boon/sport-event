@@ -1,0 +1,3 @@
+# ใช้กับ Apache (เลือกใช้ได้)
+DirectoryIndex index.php
+Options -Indexes
