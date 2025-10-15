@@ -67,3 +67,10 @@ function generate_pairs_by_color($color, $players) {
     }
     return $pairs;
 }
+
+// ดึงชื่อปีการศึกษาปัจจุบัน
+function active_year_name(PDO $pdo) {
+    $stmt = $pdo->query("SELECT title FROM academic_years WHERE is_active = 1 LIMIT 1");
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    return $row ? $row['title'] : '';
+}

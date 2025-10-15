@@ -106,6 +106,25 @@ if (!empty($_SESSION['admin'])) {
             <a class="nav-link <?php echo nav_active('regis.php',$current); ?>" href="<?php echo BASE_URL; ?>/regis.php">จัดการลงทะเบียนนักกีฬา</a>
           </li>
 
+          <!-- เมนูรายงานแบบ dropdown -->
+          <li class="nav-item dropdown">
+            <a class="nav-link dropdown-toggle <?php echo in_array($current, ['reports.php','reports_booklet.php']) ? 'active' : ''; ?>" href="#" id="reportDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+              รายงาน
+            </a>
+            <ul class="dropdown-menu" aria-labelledby="reportDropdown">
+              <li>
+                <a class="dropdown-item<?php echo $current === 'reports.php' ? ' active' : ''; ?>" href="<?php echo BASE_URL; ?>/reports.php">
+                  ใบเช็คชื่อนักกีฬา
+                </a>
+              </li>
+              <li>
+                <a class="dropdown-item<?php echo $current === 'reports_booklet.php' ? ' active' : ''; ?>" href="<?php echo BASE_URL; ?>/reports_booklet.php">
+                  รายชื่อนักกีฬา (กีฬา)
+                </a>
+              </li>
+            </ul>
+          </li>
+
           <!-- ขวาสุด: ชื่อผู้ใช้ / ออกจากระบบ -->
           <li class="nav-item dropdown">
             <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">

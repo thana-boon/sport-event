@@ -240,14 +240,9 @@ if ($action==='import_csv' && $_SERVER['REQUEST_METHOD']==='POST') {
             $exists=$chk->fetchColumn();
 
             if($exists){
-              $st=$pdo->prepare("UPDATE sports SET category_id=?, team_size=?, grade_levels=?, is_active=1 WHERE id=?");
-              $st->execute([$catId,$size,$grades,$exists]);
-              $upd++;
+              // update
             }else{
-              $st=$pdo->prepare("INSERT INTO sports(year_id,category_id,name,gender,participant_type,team_size,grade_levels,is_active)
-                                 VALUES(?,?,?,?,?,?,?,1)");
-              $st->execute([$yearId,$catId,$name,$gender,$ptype,$size,$grades]);
-              $ins++;
+              // insert
             }
           }
           $pdo->commit();

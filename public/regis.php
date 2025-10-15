@@ -180,8 +180,8 @@ if ($sportId>0 && $teamColor!=='') {
 }
 
 /* 5) ตารางภาพรวมกีฬา */
-$where=["s.year_id=:y","s.is_active=1"]; $params[':y']=$yearId;
-if($categoryFilter>0){ $where[]="s.category_id=:cid"; $params[':cid']=$categoryFilter; }
+$where=["s.year_id=:y","s.is_active=1"]; $listParams=[':y'=>$yearId];
+if($categoryFilter>0){ $where[]="s.category_id=:cid"; $listParams[':cid']=$categoryFilter; }
 $sqlSports="
   SELECT s.id,s.name,s.gender,s.participant_type,s.team_size,s.grade_levels,s.category_id,
          sc.name AS category_name,
@@ -194,7 +194,7 @@ $sqlSports="
   WHERE ".implode(' AND ',$where)."
   ORDER BY sc.name, s.name
 ";
-$stList=$pdo->prepare($sqlSports); $stList->execute($params); $sports=$stList->fetchAll(PDO::FETCH_ASSOC);
+$stList=$pdo->prepare($sqlSports); $stList->execute($listParams); $sports=$stList->fetchAll(PDO::FETCH_ASSOC);
 
 /* VIEW */
 include __DIR__ . '/../includes/header.php';
