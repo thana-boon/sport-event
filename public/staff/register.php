@@ -237,10 +237,26 @@ if ($sportId>0) {
     $q->execute($bind);
     $eligibleStudents = $q->fetchAll(PDO::FETCH_ASSOC);
 
-    // รวม datalist = คนที่เลือกได้ทั้งหมด + คนที่เคยลงไว้แล้ว
-    foreach (array_merge($prefill,$eligibleStudents) as $row) {
+    // หา student_id ที่ลงทะเบียนแล้วในกีฬานี้ แต่เป็นสีอื่น (ให้ exclude)
+    $blockedStmt = $pdo->prepare("SELECT student_id FROM registrations WHERE year_id=? AND sport_id=? AND color<>?");
+    $blockedStmt->execute([$yearId, $sportId, $staffColor]);
+    $blockedIds = $blockedStmt->fetchAll(PDO::FETCH_COLUMN, 0);
+    $blockedMap = [];
+    foreach ($blockedIds as $bid) { $blockedMap[(int)$bid] = true; }
+
+    // รวม datalist = คนที่เลือกได้ทั้งหมด + คนที่เคยลงไว้แล้ว (แต่ตัดคนที่ลงด้วยสีอื่นออก)
+    // ให้คงรายการ prefill (สีของคุณ) ไว้เสมอ
+    $prefillIds = [];
+    foreach ($prefill as $row) { $prefillIds[] = (int)$row['id']; }
+
+    foreach (array_merge($prefill, $eligibleStudents) as $row) {
+      $sid = (int)$row['id'];
+      // ถ้าคนนี้ลงด้วยสีอื่นแล้ว และไม่ใช่คนที่อยู่ใน prefill (สีของคุณ) -> ข้าม
+      if (isset($blockedMap[$sid]) && !in_array($sid, $prefillIds, true)) {
+        continue;
+      }
       $label = $row['student_code'].' '.$row['fullname'].' ('.$row['class_level'].'/'.$row['class_room'].' เลขที่ '.$row['number_in_room'].')';
-      $studentMap[$label] = (int)$row['id'];
+      $studentMap[$label] = $sid;
     }
   }
 }

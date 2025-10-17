@@ -94,12 +94,12 @@ if (!isset($_GET['export'])) {
 
         <div class="card shadow-sm">
           <div class="card-header bg-white"><h5 class="mb-0">ดาวน์โหลดรายงาน</h5></div>
-          <a class="btn btn-outline-success" href="<?php echo BASE_URL; ?>/reports_matches.php?export=1" target="_blank">
-            รายการแข่งขัน (PDF)
-          </a>
           <div class="card-body">
             <p class="text-muted">สูจิบัตรรายชื่อนักกีฬา — ปีการศึกษา: <strong><?php echo e($yearName); ?></strong></p>
-            <a class="btn btn-success" href="<?php echo BASE_URL; ?>/reports_booklet.php?export=1" target="_blank">ดาวน์โหลด PDF</a>
+            <div class="d-flex gap-2">
+              <a class="btn btn-success" href="<?php echo BASE_URL; ?>/reports_booklet.php?export=1" target="_blank">สูจิบัตรรายชื่อ</a>
+              <a class="btn btn-info" href="<?php echo BASE_URL; ?>/reports_matches.php?export=1" target="_blank">รายการแข่งขัน</a>
+            </div>
           </div>
         </div>
       </div>

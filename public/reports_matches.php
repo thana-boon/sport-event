@@ -125,6 +125,7 @@ function loadMatchesOfSport(PDO $pdo, int $yearId, int $sportId){
 $html = '<!DOCTYPE html><html lang="th"><head><meta charset="utf-8">';
 $html .= '<style>
   @page { margin: 12mm 8mm 12mm 8mm; }
+  .page-break { page-break-before: always; }
   @font-face {
     font-family: "THSarabunNew";
     font-style: normal;
@@ -148,24 +149,71 @@ $html .= '<style>
   .sport-name { font-size: 16pt; font-weight:700; margin-bottom: 2px; }
   .muted { color:#666; font-size:11pt; }
   table { width:100%; border-collapse: collapse; margin-top: 2px; font-size: 13pt; }
-  th, td { border: 1px solid #999; padding: 1.2mm 2.5px; vertical-align: middle; height: 2.8mm; }
+  th, td {
+    border: 1px solid #999;
+    padding: 0.2mm 1.2px;   /* ลด padding ให้ชิดตัวอักษร */
+    vertical-align: middle;
+    height: 1.2em;          /* ใช้ em ให้สัมพันธ์กับฟอนต์ */
+  }
   thead th { background:#f2f2f2; font-weight:700; text-align:center; }
   .nowrap { white-space:nowrap; }
   .cell-color { text-align:center; color:#000; }
   .round-label { font-weight:700; margin-top:1.5mm; font-size:14pt; }
   .small { font-size: 11pt; }
+  .header-flex {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    margin-bottom: 2mm;
+  }
+  .logo-col {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+  }
+  .logo-col img.logo {
+    height: 54px;
+    width: auto;
+    max-width: 100px;
+    display: block;
+  }
+  .headtext-col {
+    flex: 1 1 0;
+    text-align: center;
+    padding-top: 0;
+  }
+  .logo-center {
+    text-align: center;
+    margin-bottom: 2mm;
+  }
+  .logo-center img.logo {
+    height: 54px;
+    width: auto;
+    max-width: 100px;
+    display: inline-block;
+  }
+  .headtext-center {
+    text-align: center;
+  }
 </style></head><body>';
 
 // ฟังก์ชันหัวกระดาษ
 function match_header($logoHtml, $meta, $yearName, $range) {
-  $headLeft = '<div class="title">ตารางรายการแข่งขัน</div>';
-  $headLeft .= '<div class="subtitle">';
-  if (!empty($meta['title'])) { $headLeft .= e($meta['title']).' • '; }
-  $headLeft .= 'ปีการศึกษา ' . e($yearName);
-  if ($range) { $headLeft .= ' • ' . e($range); }
-  if (!empty($meta['edition_no'])) { $headLeft .= ' • ครั้งที่ ' . e($meta['edition_no']); }
-  $headLeft .= '</div>';
-  return '<div class="header">'. $logoHtml .'<div>'.$headLeft.'</div></div><hr/>';
+  $headText = '<div class="title" style="margin-bottom:2px;">ตารางรายการแข่งขัน</div>';
+  $headText .= '<div class="subtitle">';
+  if (!empty($meta['title'])) { $headText .= e($meta['title']); }
+  // ถ้า meta['title'] ไม่มีคำว่า "ปีการศึกษา" ให้เติมปีการศึกษา
+  if (empty($meta['title']) || strpos($meta['title'], 'ปีการศึกษา') === false) {
+    if (!empty($headText)) { $headText .= ' • '; }
+    $headText .= '' . e($yearName);
+  }
+  if ($range) { $headText .= ' • ' . e($range); }
+  if (!empty($meta['edition_no'])) { $headText .= ' • ครั้งที่ ' . e($meta['edition_no']); }
+  $headText .= '</div>';
+  return '
+    <div class="logo-center">'.$logoHtml.'</div>
+    <div class="headtext-center">'.$headText.'</div>
+    <hr style="margin-top:2mm;margin-bottom:2mm;"/>';
 }
 
 // เตรียมโลโก้
@@ -185,12 +233,11 @@ if (!empty($meta['start_date']) && !empty($meta['end_date'])) {
 // ===== เรียงตามชื่อกีฬาหลัก (คำแรก) =====
 $prevMainSport = null;
 foreach($sports as $sp){
-  // ดึงชื่อกีฬาหลัก (คำแรก)
   $mainSport = explode(' ', trim($sp['name']))[0];
 
   // ถ้าเป็นชื่อกีฬาหลักใหม่ ให้ขึ้นหน้าใหม่และใส่หัวกระดาษ
   if ($prevMainSport !== null && $mainSport !== $prevMainSport) {
-    $html .= '<div class="page-break"></div>';
+    $html .= '<div class="page-break"></div>'; // <-- เพิ่มตรงนี้
     $html .= match_header($logoHtml, $meta, $yearName, $range);
   }
   if ($prevMainSport === null) {
@@ -199,10 +246,11 @@ foreach($sports as $sp){
   $prevMainSport = $mainSport;
 
   $html .= '<div class="section">';
-  $html .= '<div class="sport-name">'. e($sp['name']) .'</div>';
+  $html .= '<div class="sport-name">'. e($sp['name']);
   if (!empty($sp['grade_levels'])){
-    $html .= '<div class="muted">ระดับชั้น: '. e($sp['grade_levels']) .'</div>';
+    $html .= ' <span class="muted">ระดับชั้น: '. e($sp['grade_levels']) .'</span>';
   }
+  $html .= '</div>';
 
   $matches = loadMatchesOfSport($pdo, $yearId, (int)$sp['id']);
   if (!$matches) {
@@ -231,7 +279,7 @@ foreach($sports as $sp){
                 <th>ทีม B</th>
                 <th style="width:13mm">สี</th>
                 <th class="small" style="width:13mm">ผล B</th>
-                <th style="width:18mm">สนาม</th>
+                <th style="width:18mm">คะแนน</th>
               </tr></thead><tbody>';
 
     foreach ($grp['items'] as $m) {
@@ -244,11 +292,11 @@ foreach($sports as $sp){
       $html .= '<tr>
         <td class="nowrap" style="text-align:center">'. e($m['match_no']) .'</td>
         <td class="nowrap" style="text-align:center">'. e($dt ?: '-') .'</td>
-        <td>'. e($m['side_a_label']) .'</td>
-        <td class="cell-color" style="background:'. $bgA .'">'. e($m['side_a_color'] ?? '-') .'</td>
+        <td style="text-align:center">'. e($m['side_a_label']) .'</td>
+        <td class="cell-color" style="background:'. $bgA .'; text-align:center">'. e($m['side_a_color'] ?? '-') .'</td>
         <td class="nowrap" style="text-align:center">'. e($m['score_a'] ?? '') .'</td>
-        <td>'. e($m['side_b_label']) .'</td>
-        <td class="cell-color" style="background:'. $bgB .'">'. e($m['side_b_color'] ?? '-') .'</td>
+        <td style="text-align:center">'. e($m['side_b_label']) .'</td>
+        <td class="cell-color" style="background:'. $bgB .'; text-align:center">'. e($m['side_b_color'] ?? '-') .'</td>
         <td class="nowrap" style="text-align:center">'. e($m['score_b'] ?? '') .'</td>
         <td class="nowrap" style="text-align:center">'. e($m['venue'] ?? '-') .'</td>
       </tr>';
@@ -263,7 +311,7 @@ foreach($sports as $sp){
   $m1 = $firstRoundNos[0] ?? 1;
   $m2 = $firstRoundNos[1] ?? 2;
 
-  $html .= '<div class="round-label" style="margin-top:2mm">รอบชิงที่ 3 (ช่องสำหรับกรอกภายหลัง)</div>';
+  $html .= '<div class="round-label" style="margin-top:2mm">รอบชิงที่ 3</div>';
   $html .= '<table><thead><tr>
               <th style="width:18mm">รายการ</th>
               <th>ทีม/สถานะ</th>
@@ -281,7 +329,7 @@ foreach($sports as $sp){
   </tr>';
   $html .= '</tbody></table>';
 
-  $html .= '<div class="round-label" style="margin-top:1mm">รอบชิงชนะเลิศ (ช่องสำหรับกรอกภายหลัง)</div>';
+  $html .= '<div class="round-label" style="margin-top:1mm">รอบชิงชนะเลิศ</div>';
   $html .= '<table><thead><tr>
               <th style="width:18mm">รายการ</th>
               <th>ทีม/สถานะ</th>

@@ -58,10 +58,20 @@ function generate_for_sport(PDO $pdo, int $yearId, array $sport): array {
        side_a_label, side_a_color, side_b_label, side_b_color, winner, score_a, score_b, status, notes, created_at)
       VALUES (?, ?, 'รอบคัดเลือก', 1, ?, NULL, NULL, NULL, ?, ?, ?, ?, NULL, NULL, NULL, 'pending', NULL, NOW())");
 
-    $pairs = schedule_qualify_round(COLORS);
+    // สุ่มสีก่อนสร้างคู่ เพื่อให้ไม่ออกเหมือนเดิมตลอด
+    $colors = COLORS;
+    // use secure Fisher–Yates shuffle
+    for ($i = count($colors) - 1; $i > 0; $i--) {
+      $j = random_int(0, $i);
+      [$colors[$i], $colors[$j]] = [$colors[$j], $colors[$i]];
+    }
+
+    $pairs = schedule_qualify_round($colors);
     $mno = 1;
     foreach ($pairs as $pair) {
-      [$c1,$c2] = $pair;
+      [$c1, $c2] = $pair;
+      // สลับฝั่งแบบสุ่มเพื่อเพิ่มความหลากหลาย
+      if (random_int(0,1) === 1) { [$c1, $c2] = [$c2, $c1]; }
       $ins->execute([$yearId,(int)$sport['id'],$mno++,"สี$c1",$c1,"สี$c2",$c2]);
     }
     safeCommit($pdo);

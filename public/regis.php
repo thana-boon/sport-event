@@ -256,26 +256,46 @@ include __DIR__ . '/../includes/navbar.php';
           <input type="hidden" name="team_color" value="<?php echo e($teamColor); ?>">
 
           <datalist id="students_datalist">
-            <?php foreach(array_merge($prefill,$eligible) as $r):
-              $label=$r['student_code'].' '.$r['fullname'].' ('.$r['class_level'].'/'.$r['class_room'].' เลขที่ '.$r['number_in_room'].')'; ?>
+            <?php
+              // รวม prefill+eligible แต่กรองซ้ำตาม student id (เก็บตัวแรกไว้ เพื่อให้ prefill มีลำดับก่อน)
+              $studentItems = [];
+              foreach (array_merge($prefill, $eligible) as $r) {
+                $id = (int)($r['id'] ?? 0);
+                if ($id === 0) continue;
+                if (isset($studentItems[$id])) continue;
+                $studentItems[$id] = $r;
+              }
+              foreach ($studentItems as $r) {
+                $label = $r['student_code'].' '.$r['fullname'].' ('.$r['class_level'].'/'.$r['class_room'].' เลขที่ '.$r['number_in_room'].')';
+            ?>
               <option value="<?php echo e($label); ?>"></option>
-            <?php endforeach; ?>
+            <?php } ?>
           </datalist>
 
           <div class="row g-3">
             <?php
-              $labelsPref=[]; foreach($prefill as $r){ $labelsPref[]=$r['student_code'].' '.$r['fullname'].' ('.$r['class_level'].'/'.$r['class_room'].' เลขที่ '.$r['number_in_room'].')'; }
-              $map=[]; foreach(array_merge($prefill,$eligible) as $r){ $lbl=$r['student_code'].' '.$r['fullname'].' ('.$r['class_level'].'/'.$r['class_room'].' เลขที่ '.$r['number_in_room'].')'; $map[$lbl]=(int)$r['id']; }
-              for($i=1;$i<=$teamSize;$i++):
+              // labelsPref เก็บลำดับจาก prefill เท่านั้น (ถ้ามี)
+              $labelsPref = [];
+              foreach ($prefill as $r) {
+                $labelsPref[] = $r['student_code'].' '.$r['fullname'].' ('.$r['class_level'].'/'.$r['class_room'].' เลขที่ '.$r['number_in_room'].')';
+              }
+              // สร้าง map จาก $studentItems ที่กรองซ้ำแล้ว (label => id)
+              $map = [];
+              foreach ($studentItems as $r) {
+                $lbl = $r['student_code'].' '.$r['fullname'].' ('.$r['class_level'].'/'.$r['class_room'].' เลขที่ '.$r['number_in_room'].')';
+                $map[$lbl] = (int)$r['id'];
+              }
+           ?>
+              <?php for($i=1;$i<=$teamSize;$i++):
                 $val=$labelsPref[$i-1]??''; $prefId=$val && isset($map[$val])?$map[$val]:0;
-            ?>
-              <div class="col-md-6">
-                <label class="form-label">ผู้เล่นที่ <?php echo $i; ?></label>
-                <input type="text" class="form-control student-input" list="students_datalist" placeholder="พิมพ์ค้นหา รหัส/ชื่อ..." autocomplete="off" value="<?php echo e($val); ?>">
-                <input type="hidden" name="student_id_<?php echo $i; ?>" class="student-id-hidden" value="<?php echo (int)$prefId; ?>">
-                <div class="form-text">ปล่อยว่าง = ไม่ใช้ช่องนี้</div>
-              </div>
-            <?php endfor; ?>
+              ?>
+                <div class="col-md-6">
+                  <label class="form-label">ผู้เล่นที่ <?php echo $i; ?></label>
+                  <input type="text" class="form-control student-input" list="students_datalist" placeholder="พิมพ์ค้นหา รหัส/ชื่อ..." autocomplete="off" value="<?php echo e($val); ?>">
+                  <input type="hidden" name="student_id_<?php echo $i; ?>" class="student-id-hidden" value="<?php echo (int)$prefId; ?>">
+                  <div class="form-text">ปล่อยว่าง = ไม่ใช้ช่องนี้</div>
+                </div>
+              <?php endfor; ?>
           </div>
 
           <div class="mt-3 d-flex gap-2">

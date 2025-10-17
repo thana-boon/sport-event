@@ -32,6 +32,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'role'         => $user['role'],
         'staff_color'  => $user['staff_color'],
       ];
+      // เริ่มจับเวลา inactivity
+      $_SESSION['last_activity'] = time();
       header('Location: ' . BASE_URL . '/index.php');
       exit;
     } else {

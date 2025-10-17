@@ -119,7 +119,10 @@ if (!empty($_SESSION['admin'])) {
               </li>
               <li>
                 <a class="dropdown-item<?php echo $current === 'reports_booklet.php' ? ' active' : ''; ?>" href="<?php echo BASE_URL; ?>/reports_booklet.php">
-                  รายชื่อนักกีฬา (กีฬา)
+                  สูจิบัตรรายชื่อนักกีฬา (กีฬา)
+                </a>
+                <a class="dropdown-item<?php echo $current === 'reports_athletics.php' ? ' active' : ''; ?>" href="<?php echo BASE_URL; ?>/reports_athletics.php">
+                  สูจิบัตรรายชื่อนักกีฬา (กรีฑา)
                 </a>
               </li>
             </ul>
