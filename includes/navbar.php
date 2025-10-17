@@ -56,6 +56,14 @@ if (!empty($_SESSION['admin'])) {
     ?? $_SESSION['admin']['username']
     ?? 'admin';
 }
+
+// ซ่อนทั้ง navbar เมื่อ URI ชี้ไปยังหน้า login (admin/referee/staff)
+$uri = $_SERVER['REQUEST_URI'] ?? '';
+$hideNav = (strpos($uri, '/login.php') !== false)
+         || (strpos($uri, '/referee/login.php') !== false)
+         || (strpos($uri, '/staff/login.php') !== false);
+
+if (!$hideNav):
 ?>
 <nav class="navbar navbar-expand-lg navbar-dark bg-primary shadow-sm">
   <div class="container">
@@ -101,9 +109,15 @@ if (!empty($_SESSION['admin'])) {
             </ul>
           </li>
 
-          <!-- ควบคุมการลงทะเบียน -->
-          <li class="nav-item">
-            <a class="nav-link <?php echo nav_active('regis.php',$current); ?>" href="<?php echo BASE_URL; ?>/regis.php">จัดการลงทะเบียนนักกีฬา</a>
+          <!-- กลุ่ม: การลงทะบียน -->
+          <li class="nav-item dropdown">
+            <a class="nav-link dropdown-toggle <?php echo in_array($current, ['sports.php','matches.php','athletics.php']) ? 'active' : ''; ?>" href="#" id="sportDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+              GodMode
+            </a>
+            <ul class="dropdown-menu" aria-labelledby="sportDropdown">
+              <li><a class="dropdown-item <?php echo nav_active('regis.php',$current); ?>" href="<?php echo BASE_URL; ?>/regis.php">จัดการลงทะเบียนนักกีฬา</a></li>
+              <li><a class="dropdown-item <?php echo nav_active('referee.php',$current); ?>" href="<?php echo BASE_URL; ?>/referee.php">บันทึกผลกการแข่งขัน</a></li>
+            </ul>
           </li>
 
           <!-- เมนูรายงานแบบ dropdown -->
@@ -151,3 +165,5 @@ if (!empty($_SESSION['admin'])) {
     </div>
   </div>
 </nav>
+<?php
+endif;

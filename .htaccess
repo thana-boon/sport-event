@@ -1,3 +1,21 @@
 # ใช้กับ Apache (เลือกใช้ได้)
 DirectoryIndex index.php
 Options -Indexes
+
+RewriteEngine On
+RewriteBase /sport-event/
+
+# ไม่ไปยุ่งกับ URL ที่อยู่แล้วใน /public/
+RewriteCond %{REQUEST_URI} !^/sport-event/public/
+
+# root -> public/staff/
+RewriteRule ^$ public/staff/ [L,R=302]
+
+# /staff -> public/staff/
+RewriteRule ^staff/?$ public/staff/ [L,R=302]
+
+# /admin -> public/  (admin site)
+RewriteRule ^admin/?$ public/ [L,R=302]
+
+# /referee -> public/referee/
+RewriteRule ^referee/?$ public/referee/ [L,R=302]
