@@ -130,7 +130,7 @@ include __DIR__ . '/../includes/navbar.php';
   <div class="card border-0 shadow-sm rounded-4">
     <div class="card-body">
       <div class="d-flex align-items-center justify-content-between mb-2">
-        <h6 class="mb-0">นักเรียนที่ลงทะเบียนเกินกำหนด (อิง max_per_student ของหมวดกีฬา)</h6>
+        <h6 class="mb-0">นักเรียนที่ลงทะเบียนเกินกำหนด</h6>
         <?php if ($overCount > 0): ?>
           <span class="badge bg-danger"><?php echo $overCount; ?> รายการ</span>
         <?php else: ?>

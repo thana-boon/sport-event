@@ -108,11 +108,17 @@ include_once __DIR__ . '/../../includes/navbar.php';
     }
     .logo {
       width:56px; height:56px; border-radius:10px;
+      display:inline-flex; align-items:center; justify-content:center;
       background: linear-gradient(135deg, var(--accent), var(--accent-2));
-      display:flex; align-items:center; justify-content:center; color:#fff;
-      font-weight:700; font-size:1.05rem;
       box-shadow: 0 6px 18px rgba(13,110,253,0.12);
     }
+    .logo img {
+      width:48px;
+      height:48px;
+      object-fit:contain;
+      border-radius:8px; /* ถ้าอยากได้มุมโค้ง */
+      background: transparent;
+     }
     .login-right {
       flex:0 0 380px;
       padding:2rem;
@@ -137,11 +143,13 @@ include_once __DIR__ . '/../../includes/navbar.php';
     <div class="card login-card">
       <div class="login-left">
         <div class="brand-mark">
-          <div class="logo">SE</div>
-          <div>
-            <h3>โรงเรียนสุคนธีรวิทย์</h3>
-            <div class="muted">ระบบจัดการการลงทะเบียนและบันทึกผล</div>
+          <div class="logo">
+            <img src="<?php echo rtrim(BASE_URL, '/'); ?>/assets/school-logo.png" alt="โลโก้โรงเรียน">
           </div>
+           <div>
+             <h3>โรงเรียนสุคนธีรวิทย์</h3>
+             <div class="muted">ระบบจัดการการลงทะเบียนและบันทึกผล</div>
+           </div>
         </div>
 
         <div style="margin-top:12px;">
