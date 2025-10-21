@@ -259,12 +259,40 @@ function renderScores(summary, breakdown){
       </tr>`);
   });
 }
-function exportCSV(){
-  const rows = Array.from(document.querySelectorAll('#scoreBody tr')).map(tr => Array.from(tr.children).map(td => td.innerText.replace(/\s+/g,' ').trim()));
-  const csv = 'สี,คะแนนรวม,รายละเอียด\n' + rows.map(r => r.map(v => `"${v.replaceAll('"','""')}"`).join(',')).join('\n');
-  const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
-  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download='scores.csv'; a.click(); URL.revokeObjectURL(a.href);
+function exportCSV(delim = ',', filename = 'scores.csv') {
+  // เก็บข้อมูลจากตาราง
+  const rows = Array.from(document.querySelectorAll('#scoreBody tr')).map(tr =>
+    Array.from(tr.children).map(td => td.innerText.replace(/\s+/g, ' ').trim())
+  );
+
+  const header = ['สี','คะแนนรวม','รายละเอียด'];
+
+  // แปลงเป็น 1 บรรทัด (quote เฉพาะกรณี CSV)
+  const toLine = (arr) => arr.map((v) => {
+    const s = String(v).replace(/\r?\n/g, ' ').replace(/"/g, '""');
+    return (delim === ',') ? `"${s}"` : s; // CSV -> "..."  /  TSV -> no quotes
+  }).join(delim);
+
+  // ใส่ prefix 'sep=,' สำหรับ Excel + ใช้ BOM + CRLF
+  const prefix = (delim === ',') ? 'sep=,\r\n' : '';
+  const lines  = [toLine(header)].concat(rows.map(toLine)).join('\r\n');
+  const BOM    = '\uFEFF';
+  const blob   = new Blob([BOM + prefix + lines], {type: 'text/csv;charset=utf-8;'});
+
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;            // << กำหนดให้เป็น .csv เสมอ
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
 }
+
+// ปุ่ม Export (CSV)
+document.getElementById('btnExport').onclick = () => exportCSV(',', 'scores.csv');
+
+// ถ้าอยากกดส่งออกแบบแท็บคั่นแต่ยังใช้ .csv ก็ทำได้เช่นกัน:
+// document.getElementById('btnExport').onclick = () => exportCSV('\t', 'scores.csv');
 
 init();
 </script>

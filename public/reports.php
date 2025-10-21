@@ -224,21 +224,48 @@ if ($action === 'sheet') {
 include __DIR__ . '/../includes/header.php';
 include __DIR__ . '/../includes/navbar.php';
 ?>
+<!-- เพิ่มสไตล์เล็กน้อยสำหรับจัดปุ่มให้สวย -->
+<style>
+  .report-actions { display:flex; flex-wrap:wrap; gap:.5rem; align-items:center; }
+  .report-actions .colors { display:flex; gap:.5rem; flex-wrap:wrap; }
+  .report-actions .colors .btn { min-width:110px; display:inline-flex; align-items:center; justify-content:center; gap:.5rem; font-weight:600; }
+  .report-actions .btn-register { margin-left:auto; }
+  /* สีแบบกำหนดเองให้คงความสด */
+  .c-green { background:#10b981; border-color:#10b981; color:#fff; }
+  .c-sky   { background:#0ea5e9; border-color:#0ea5e9; color:#fff; }
+  .c-pink  { background:#f472b6; border-color:#f472b6; color:#fff; }
+  .c-amber { background:#fb923c; border-color:#fb923c; color:#fff; }
+  @media (max-width:576px){
+    .report-actions .btn-register { width:100%; order:3; }
+    .report-actions .colors { width:100%; order:1; justify-content:space-between; }
+  }
+</style>
+
 <main class="container py-4">
-  <div class="d-flex align-items-center justify-content-between">
-    <h5 class="mb-3">รายงาน &raquo; ใบเช็คชื่อนักกีฬา (แยกตามสี)</h5>
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <h5 class="mb-0">รายงาน &raquo; ใบเช็คชื่อนักกีฬา (แยกตามสี)</h5>
   </div>
 
   <div class="card shadow-sm">
     <div class="card-body">
       <p class="text-muted mb-3">ดาวน์โหลด PDF ขนาด A4 (หนึ่งหน้า = 1 ห้อง)</p>
-      <div class="d-flex flex-wrap gap-2">
-        <a class="btn btn-success" href="?action=sheet&color=<?php echo urlencode('เขียว'); ?>">สีเขียว</a>
-        <a class="btn btn-info"    href="?action=sheet&color=<?php echo urlencode('ฟ้า'); ?>">สีฟ้า</a>
-        <a class="btn btn-outline-danger" href="?action=sheet&color=<?php echo urlencode('ชมพู'); ?>">สีชมพู</a>
-        <a class="btn btn-warning" href="?action=sheet&color=<?php echo urlencode('ส้ม'); ?>">สีส้ม</a>
+
+      <!-- เรียงปุ่มเป็นกลุ่มเดียวกัน ดูเป็นระเบียบ -->
+      <div class="report-actions mb-3">
+        <div class="colors" role="group" aria-label="สี">
+          <a class="btn c-green" href="?action=sheet&color=<?php echo urlencode('เขียว'); ?>">สีเขียว</a>
+          <a class="btn c-sky"   href="?action=sheet&color=<?php echo urlencode('ฟ้า'); ?>">สีฟ้า</a>
+          <a class="btn c-pink"  href="?action=sheet&color=<?php echo urlencode('ชมพู'); ?>">สีชมพู</a>
+          <a class="btn c-amber" href="?action=sheet&color=<?php echo urlencode('ส้ม'); ?>">สีส้ม</a>
+        </div>
+
+        <a class="btn btn-outline-primary btn-register" href="<?= BASE_URL ?>/reports_export_registration.php">
+          ใบลงทะเบียนกีฬา (PDF)
+        </a>
       </div>
+
       <hr>
+
       <div class="small text-muted">
         ปีการศึกษา: <strong><?php echo htmlspecialchars($yearName ?? '', ENT_QUOTES, 'UTF-8'); ?></strong>
       </div>
