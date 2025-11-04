@@ -54,6 +54,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_meta'])) {
   exit;
 }
 
+// ฟังก์ชันแปลงเพศ
+function formatGender($gender) {
+  if ($gender === 'ช') return 'ชาย';
+  if ($gender === 'ญ') return 'หญิง';
+  if ($gender === 'รวม') return 'ชาย-หญิง';
+  if ($gender === 'ผสม') return 'ชาย-หญิง';
+  return $gender;
+}
+
 if (!isset($_GET['export'])) {
   include __DIR__ . '/../includes/header.php';
   include __DIR__ . '/../includes/navbar.php';
@@ -242,8 +251,9 @@ if (!$sports){
     $prevMainSport = $mainSport;
 
     $players = loadPlayersOfSport($pdo,$yearId,(int)$sp['id']);
+    $genderDisplay = formatGender($sp['gender']); // แปลง ช/ญ เป็น ชาย/หญิง
     $html .= '<div class="sport-head">'. e($sp['name']) .' — '. e($sp['participant_type'])
-          .' • หมวด: '. e($sp['category_name']) .' • เพศ: '. e($sp['gender']) .'</div>';
+          .' • หมวด: '. e($sp['category_name']) .' • เพศ: '. e($genderDisplay) .'</div>';
     if (!empty($sp['grade_levels'])){
       $html .= '<div class="small">ชั้นที่เปิด: '. e($sp['grade_levels']) .'</div>';
     }

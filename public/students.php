@@ -126,6 +126,23 @@ if ($action === 'delete' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
+// ===== Action: delete all students =====
+if ($action === 'delete_all' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $confirm = trim($_POST['confirm_delete'] ?? '');
+    if ($confirm === 'DELETE') {
+        try {
+            $stmt = $pdo->prepare("DELETE FROM students WHERE year_id=?");
+            $stmt->execute([$yearId]);
+            $deleted = $stmt->rowCount();
+            $messages[] = "✅ ลบนักเรียนทั้งหมด {$deleted} คน เรียบร้อย (ปีการศึกษา {$yearId})";
+        } catch (Throwable $e) {
+            $errors[] = 'ลบไม่สำเร็จ: '.e($e->getMessage());
+        }
+    } else {
+        $errors[] = 'ยืนยันไม่ถูกต้อง (ต้องพิมพ์คำว่า DELETE ตัวพิมพ์ใหญ่)';
+    }
+}
+
 if ($action === 'import_csv' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!isset($_FILES['csv']) || $_FILES['csv']['error'] !== UPLOAD_ERR_OK) {
         $errors[] = 'อัปโหลดไฟล์ไม่สำเร็จ';
@@ -262,6 +279,11 @@ $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 // ===== UI =====
 include __DIR__ . '/../includes/header.php';
 include __DIR__ . '/../includes/navbar.php';
+
+// สร้างตัวเลือกชั้นเรียน (ป.1 ถึง ม.6)
+$classOptions = [];
+for ($i=1; $i<=6; $i++) { $classOptions[] = "ป.{$i}"; }
+for ($i=1; $i<=6; $i++) { $classOptions[] = "ม.{$i}"; }
 ?>
 <main class="container py-4">
   <div class="row g-3">
@@ -301,7 +323,12 @@ include __DIR__ . '/../includes/navbar.php';
             </div>
             <div class="col-4">
               <label class="form-label">ชั้น</label>
-              <input type="text" class="form-control" name="class_level" placeholder="ป.3/ม.1" required>
+              <select class="form-select" name="class_level" required>
+                <option value="">- เลือก -</option>
+                <?php foreach($classOptions as $cls): ?>
+                  <option value="<?= $cls ?>"><?= $cls ?></option>
+                <?php endforeach; ?>
+              </select>
             </div>
             <div class="col-4">
               <label class="form-label">ห้อง</label>
@@ -343,6 +370,10 @@ include __DIR__ . '/../includes/navbar.php';
               <button class="btn btn-outline-primary">ส่งออก CSV (ปีปัจจุบัน)</button>
             </div>
           </form>
+          <hr>
+          <div class="d-grid">
+            <button class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteAllModal">ลบนักเรียนทั้งหมด</button>
+          </div>
         </div>
       </div>
     </div>
@@ -363,7 +394,12 @@ include __DIR__ . '/../includes/navbar.php';
             </div>
             <div class="col-sm-3">
               <label class="form-label">ชั้น</label>
-              <input type="text" class="form-control" name="class_level" value="<?php echo e($classLvl); ?>" placeholder="ป.3/ม.1">
+              <select class="form-select" name="class_level">
+                <option value="">ทั้งหมด</option>
+                <?php foreach($classOptions as $cls): ?>
+                  <option value="<?= $cls ?>" <?= ($cls===$classLvl)?'selected':'' ?>><?= $cls ?></option>
+                <?php endforeach; ?>
+              </select>
             </div>
             <div class="col-sm-2">
               <label class="form-label">ห้อง</label>
@@ -493,7 +529,11 @@ include __DIR__ . '/../includes/navbar.php';
         </div>
         <div class="col-4">
           <label class="form-label">ชั้น</label>
-          <input type="text" class="form-control" id="edit-lv" name="class_level" required>
+          <select class="form-select" id="edit-lv" name="class_level" required>
+            <?php foreach($classOptions as $cls): ?>
+              <option value="<?= $cls ?>"><?= $cls ?></option>
+            <?php endforeach; ?>
+          </select>
         </div>
         <div class="col-4">
           <label class="form-label">ห้อง</label>
@@ -507,6 +547,30 @@ include __DIR__ . '/../includes/navbar.php';
       <div class="modal-footer">
         <button type="button" class="btn btn-light" data-bs-dismiss="modal">ยกเลิก</button>
         <button type="submit" class="btn btn-primary">บันทึก</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Delete All Modal -->
+<div class="modal fade" id="deleteAllModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <form class="modal-content" method="post" action="<?php echo BASE_URL; ?>/students.php">
+      <input type="hidden" name="action" value="delete_all">
+      <div class="modal-header bg-danger text-white">
+        <h5 class="modal-title">⚠️ ลบนักเรียนทั้งหมด</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-danger mb-3">
+          <strong>คำเตือน:</strong> การกระทำนี้จะลบนักเรียน<strong>ทั้งหมด</strong>ในปีการศึกษานี้ และ<strong>ไม่สามารถกู้คืนได้</strong>
+        </div>
+        <p>กรุณาพิมพ์คำว่า <code class="text-danger fw-bold">DELETE</code> เพื่อยืนยัน:</p>
+        <input type="text" class="form-control" name="confirm_delete" placeholder="พิมพ์ DELETE" required autocomplete="off">
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-light" data-bs-dismiss="modal">ยกเลิก</button>
+        <button type="submit" class="btn btn-danger">ลบทั้งหมด</button>
       </div>
     </form>
   </div>

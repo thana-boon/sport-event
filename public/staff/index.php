@@ -38,7 +38,7 @@ $catInfo = [];
 foreach ($categories as $c) {
   $catInfo[(int)$c['id']] = [
     'name' => $c['name'],
-    'max'  => is_null($c['max_per_student']) ? 0 : (int)$c['max_per_student'] // 0 = ไม่จำกัด
+    'max'  => is_null($c['max_per_student']) ? 0 : (int)$c['max_per_student']
   ];
 }
 
@@ -46,12 +46,10 @@ foreach ($categories as $c) {
 $q = trim($_GET['q'] ?? '');
 $grade = trim($_GET['grade'] ?? '');
 
-// ดึงรายการชั้นเรียน (class_level) ของสีนี้ในปีนี้
 $gs = $pdo->prepare("SELECT DISTINCT class_level FROM students WHERE year_id=? AND color=? ORDER BY class_level");
 $gs->execute([$yearId, $staffColor]);
 $gradeOptions = $gs->fetchAll(PDO::FETCH_COLUMN);
 
-// นับสรุป (รวม)
 $countAllStmt = $pdo->prepare("SELECT COUNT(*) FROM students WHERE year_id=? AND color=?");
 $countRegStmt = $pdo->prepare("
   SELECT COUNT(DISTINCT s.id)
@@ -65,7 +63,6 @@ $countRegStmt->execute([$yearId, $staffColor]);
 $registeredStudents = (int)$countRegStmt->fetchColumn();
 $notRegistered = max(0, $totalStudents - $registeredStudents);
 
-// ดึงรายชื่อนักเรียน (ตามฟิลเตอร์)
 $where = ["s.year_id=:y", "s.color=:c"];
 $params = [":y"=>$yearId, ":c"=>$staffColor];
 if ($q !== '') {
@@ -96,8 +93,7 @@ $st = $pdo->prepare($sqlStudents);
 $st->execute($params);
 $students = $st->fetchAll(PDO::FETCH_ASSOC);
 
-// -------- โหลดจำนวนที่ลงทะเบียนต่อ "นักเรียน x หมวด" เพื่อทำ badge --------
-$perCatCounts = []; // [student_id][category_id] = cnt
+$perCatCounts = [];
 if ($students) {
   $ids = array_map(fn($r)=> (int)$r['id'], $students);
   $in = implode(',', array_fill(0, count($ids), '?'));
@@ -118,52 +114,154 @@ if ($students) {
   }
 }
 
-// VIEW
+// Color themes
+$colorThemes = [
+  'เขียว' => ['bg' => '#d4edda', 'hex' => '#28a745', 'light' => '#e8f5e9'],
+  'ฟ้า'   => ['bg' => '#d1ecf1', 'hex' => '#17a2b8', 'light' => '#e1f5fe'],
+  'ชมพู'  => ['bg' => '#f8d7da', 'hex' => '#e83e8c', 'light' => '#fce4ec'],
+  'ส้ม'   => ['bg' => '#fff3cd', 'hex' => '#fd7e14', 'light' => '#fff8e1'],
+];
+$currentTheme = $colorThemes[$staffColor] ?? ['bg' => '#f8f9fa', 'hex' => '#6c757d', 'light' => '#f8f9fa'];
+
+$pageTitle = 'รายชื่อนักเรียน - สี' . $staffColor;
 include __DIR__ . '/../../includes/header.php';
 include __DIR__ . '/navbar.php';
 ?>
+
+<style>
+  body {
+    background: linear-gradient(135deg, <?php echo $currentTheme['light']; ?> 0%, #ffffff 100%);
+  }
+  .stat-card {
+    border-radius: 1rem;
+    border: none;
+    transition: transform 0.2s;
+  }
+  .stat-card:hover {
+    transform: translateY(-2px);
+  }
+  .stat-icon {
+    font-size: 2.5rem;
+    opacity: 0.7;
+  }
+  .color-badge-big {
+    background: linear-gradient(135deg, <?php echo $currentTheme['hex']; ?>, <?php echo $currentTheme['hex']; ?>dd);
+    color: white;
+    padding: 0.5rem 1.25rem;
+    border-radius: 2rem;
+    font-weight: 600;
+    box-shadow: 0 4px 12px <?php echo $currentTheme['hex']; ?>33;
+  }
+  .search-card {
+    border-radius: 1rem;
+    border: 2px solid <?php echo $currentTheme['hex']; ?>33;
+    background: white;
+  }
+  .student-row {
+    transition: all 0.2s;
+  }
+  .student-row:hover {
+    background: <?php echo $currentTheme['light']; ?> !important;
+    transform: scale(1.01);
+  }
+  .status-badge {
+    padding: 0.4rem 0.8rem;
+    border-radius: 1rem;
+    font-weight: 500;
+    font-size: 0.85rem;
+  }
+  .empty-state {
+    padding: 3rem;
+    text-align: center;
+    color: #6c757d;
+  }
+  .page-header {
+    background: linear-gradient(135deg, <?php echo $currentTheme['hex']; ?>, <?php echo $currentTheme['hex']; ?>dd);
+    color: white;
+    padding: 2rem;
+    border-radius: 1rem;
+    margin-bottom: 2rem;
+    box-shadow: 0 8px 24px <?php echo $currentTheme['hex']; ?>33;
+  }
+</style>
+
 <main class="container py-4">
+  <!-- Page Header -->
+  <div class="page-header">
+    <div class="d-flex align-items-center justify-content-between">
+      <div>
+        <h3 class="mb-1">🏆 ระบบจัดการนักกีฬา</h3>
+        <p class="mb-0 opacity-75">รายชื่อนักเรียน สี<?php echo e($staffColor); ?></p>
+      </div>
+      <div class="text-end">
+        <div class="stat-icon">🎨</div>
+      </div>
+    </div>
+  </div>
 
   <!-- Summary cards -->
-  <div class="row g-3 mb-3">
+  <div class="row g-3 mb-4">
     <div class="col-md-4">
-      <div class="card border-0 shadow-sm rounded-4">
-        <div class="card-body d-flex justify-content-between align-items-center">
-          <div>
-            <div class="text-muted small">จำนวนนักเรียนสีของคุณ</div>
-            <div class="h4 mb-0"><?php echo number_format($totalStudents); ?> คน</div>
+      <div class="card stat-card shadow-sm" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-start mb-2">
+            <div>
+              <div class="small opacity-75">👨‍🎓 นักเรียนทั้งหมด</div>
+              <div class="h2 mb-0 fw-bold"><?php echo number_format($totalStudents); ?></div>
+              <small class="opacity-75">คน</small>
+            </div>
+            <div class="stat-icon">🏫</div>
           </div>
-          <div class="badge bg-secondary fs-6">สี<?php echo e($staffColor); ?></div>
+          <div class="color-badge-big d-inline-block mt-2">
+            สี<?php echo e($staffColor); ?>
+          </div>
         </div>
       </div>
     </div>
+    
     <div class="col-md-4">
-      <div class="card border-0 shadow-sm rounded-4">
+      <div class="card stat-card shadow-sm" style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white;">
         <div class="card-body">
-          <div class="text-muted small">ลงทะเบียนอย่างน้อย 1 กีฬา</div>
-          <div class="h4 mb-0 text-success"><?php echo number_format($registeredStudents); ?> คน</div>
+          <div class="d-flex justify-content-between align-items-start mb-2">
+            <div>
+              <div class="small opacity-75">✅ ลงทะเบียนแล้ว</div>
+              <div class="h2 mb-0 fw-bold"><?php echo number_format($registeredStudents); ?></div>
+              <small class="opacity-75">คิดเป็น <?php echo $totalStudents>0? number_format(($registeredStudents/$totalStudents)*100,1):'0'; ?>%</small>
+            </div>
+            <div class="stat-icon">✍️</div>
+          </div>
         </div>
       </div>
     </div>
+    
     <div class="col-md-4">
-      <div class="card border-0 shadow-sm rounded-4">
+      <div class="card stat-card shadow-sm" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white;">
         <div class="card-body">
-          <div class="text-muted small">ยังไม่ได้ลงทะเบียน</div>
-          <div class="h4 mb-0 text-danger"><?php echo number_format($notRegistered); ?> คน</div>
+          <div class="d-flex justify-content-between align-items-start mb-2">
+            <div>
+              <div class="small opacity-75">⏳ ยังไม่ลงทะเบียน</div>
+              <div class="h2 mb-0 fw-bold"><?php echo number_format($notRegistered); ?></div>
+              <small class="opacity-75">คิดเป็น <?php echo $totalStudents>0? number_format(($notRegistered/$totalStudents)*100,1):'0'; ?>%</small>
+            </div>
+            <div class="stat-icon">📝</div>
+          </div>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Filters -->
-  <div class="card border-0 shadow-sm rounded-4">
+  <!-- Filters & Table -->
+  <div class="card search-card shadow">
     <div class="card-body">
-      <div class="d-flex flex-wrap justify-content-between align-items-end gap-2 mb-3">
-        <h5 class="card-title mb-0">รายชื่อนักเรียน (สี<?php echo e($staffColor); ?>)</h5>
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+        <h5 class="mb-0">
+          <span style="color: <?php echo $currentTheme['hex']; ?>;">📋</span> 
+          รายชื่อนักเรียน
+        </h5>
         <form class="row g-2 align-items-end" method="get" action="<?php echo BASE_URL; ?>/staff/index.php">
           <div class="col-auto">
-            <label class="form-label">ชั้น</label>
-            <select class="form-select" name="grade">
+            <label class="form-label small text-muted mb-1">🎓 ชั้น</label>
+            <select class="form-select" name="grade" style="border-color: <?php echo $currentTheme['hex']; ?>66;">
               <option value="">ทั้งหมด</option>
               <?php foreach ($gradeOptions as $g): ?>
                 <option value="<?php echo e($g); ?>" <?php echo $grade===$g?'selected':''; ?>><?php echo e($g); ?></option>
@@ -171,52 +269,71 @@ include __DIR__ . '/navbar.php';
             </select>
           </div>
           <div class="col-auto">
-            <label class="form-label">ค้นหา</label>
-            <input type="text" class="form-control" name="q" placeholder="รหัส / ชื่อ / นามสกุล" value="<?php echo e($q); ?>">
+            <label class="form-label small text-muted mb-1">🔍 ค้นหา</label>
+            <input type="text" class="form-control" name="q" placeholder="รหัส / ชื่อ / นามสกุล" value="<?php echo e($q); ?>" style="border-color: <?php echo $currentTheme['hex']; ?>66;">
           </div>
           <div class="col-auto">
-            <button class="btn btn-primary">ค้นหา</button>
+            <button class="btn text-white" style="background: <?php echo $currentTheme['hex']; ?>;">
+              ค้นหา 🔎
+            </button>
           </div>
         </form>
       </div>
 
       <div class="table-responsive">
         <table class="table align-middle">
-          <thead>
+          <thead style="background: <?php echo $currentTheme['light']; ?>;">
             <tr>
-              <th style="width:110px;">รหัส</th>
-              <th>ชื่อ-สกุล</th>
-              <th style="width:80px;">ชั้น</th>
-              <th style="width:70px;">ห้อง</th>
-              <th style="width:80px;">เลขที่</th>
-              <th class="text-center" style="min-width:240px;">สถานะลงทะเบียน (แยกตามประเภท)</th>
+              <th class="border-0" style="width:110px;">📌 รหัส</th>
+              <th class="border-0">👤 ชื่อ-สกุล</th>
+              <th class="border-0" style="width:80px;">🎓 ชั้น</th>
+              <th class="border-0" style="width:70px;">🚪 ห้อง</th>
+              <th class="border-0" style="width:80px;">🔢 เลขที่</th>
+              <th class="border-0 text-center" style="min-width:240px;">📊 สถานะลงทะเบียน</th>
             </tr>
           </thead>
           <tbody>
           <?php if (!$students): ?>
-            <tr><td colspan="6" class="text-muted">ไม่พบนักเรียนตามเงื่อนไข</td></tr>
-          <?php else: foreach ($students as $s):
-            $sid = (int)$s['id'];
-            $hasAny = !empty($perCatCounts[$sid]);
-          ?>
             <tr>
-              <td class="fw-semibold"><?php echo e($s['student_code']); ?></td>
+              <td colspan="6">
+                <div class="empty-state">
+                  <div style="font-size: 3rem; margin-bottom: 1rem;">🔍</div>
+                  <p class="mb-0">ไม่พบนักเรียนตามเงื่อนไขที่ค้นหา</p>
+                </div>
+              </td>
+            </tr>
+          <?php else: 
+            $rowIndex = 0;
+            foreach ($students as $s):
+              $sid = (int)$s['id'];
+              $hasAny = !empty($perCatCounts[$sid]);
+              $rowClass = ($rowIndex % 2 === 0) ? '' : 'table-light';
+              $rowIndex++;
+          ?>
+            <tr class="student-row <?php echo $rowClass; ?>">
+              <td class="fw-semibold" style="color: <?php echo $currentTheme['hex']; ?>;">
+                <?php echo e($s['student_code']); ?>
+              </td>
               <td><?php echo e($s['fullname']); ?></td>
-              <td><?php echo e($s['grade']); ?></td>
-              <td><?php echo e($s['room']); ?></td>
-              <td><?php echo e($s['number']); ?></td>
+              <td><span class="badge bg-light text-dark"><?php echo e($s['grade']); ?></span></td>
+              <td><span class="badge bg-light text-dark"><?php echo e($s['room']); ?></span></td>
+              <td><span class="badge bg-light text-dark"><?php echo e($s['number']); ?></span></td>
               <td class="text-center">
                 <?php if (!$hasAny): ?>
-                  <span class="badge bg-secondary">ยังไม่ลง</span>
+                  <span class="status-badge" style="background: #6c757d33; color: #6c757d;">
+                    ⏳ ยังไม่ลง
+                  </span>
                 <?php else: ?>
                   <?php foreach ($perCatCounts[$sid] as $cid => $cnt):
                     $catName = $catInfo[$cid]['name'] ?? ('หมวด#'.$cid);
                     $limit   = $catInfo[$cid]['max'] ?? 0;
                     $ok = ($limit === 0) || ($cnt <= $limit);
-                    $cls = $ok ? 'bg-success' : 'bg-danger';
+                    $bgColor = $ok ? '#28a74533' : '#dc354533';
+                    $textColor = $ok ? '#28a745' : '#dc3545';
+                    $icon = $ok ? '✅' : '⚠️';
                   ?>
-                    <span class="badge <?php echo $cls; ?> me-1 mb-1">
-                      <?php echo e($cnt); ?> <?php echo e($catName); ?>
+                    <span class="status-badge me-1 mb-1" style="background: <?php echo $bgColor; ?>; color: <?php echo $textColor; ?>;">
+                      <?php echo $icon; ?> <?php echo e($cnt); ?> <?php echo e($catName); ?>
                     </span>
                   <?php endforeach; ?>
                 <?php endif; ?>
@@ -226,7 +343,14 @@ include __DIR__ . '/navbar.php';
           </tbody>
         </table>
       </div>
+
+      <?php if ($students): ?>
+        <div class="mt-3 text-muted small text-center">
+          📊 แสดง <?php echo number_format(count($students)); ?> คน จากทั้งหมด <?php echo number_format($totalStudents); ?> คน
+        </div>
+      <?php endif; ?>
     </div>
   </div>
 </main>
+
 <?php include __DIR__ . '/../../includes/footer.php'; ?>

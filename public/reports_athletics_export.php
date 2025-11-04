@@ -15,6 +15,10 @@ $pdo = db();
 $yearId   = active_year_id($pdo);
 $yearName = function_exists('active_year_name') ? active_year_name($pdo) : 'ปีการศึกษา';
 
+// คำนวณครั้งที่จาก พ.ศ.
+$currentYearBE = (int)date('Y') + 543;
+$gameNumber = $currentYearBE - 2552;
+
 // โลโก้ล่าสุด
 $logoPath = null;
 $logoDir = __DIR__ . '/uploads/logo';
@@ -67,7 +71,7 @@ $getLanesRaw = function(PDO $pdo, int $heatId){
   $out=[]; foreach($rows as $r){ $out[(int)$r['lane_no']]=$r; } return $out;
 };
 
-// pool: รายชื่อผู้ลงทะเบียนตาม “สี” ของกีฬานี้ (เพื่อเติมให้ครบ team_size)
+// pool: รายชื่อผู้ลงทะเบียนตาม "สี" ของกีฬานี้ (เพื่อเติมให้ครบ team_size)
 $getRegPools = function(PDO $pdo, int $yearId, int $sportId){
   $sql="
     SELECT r.id AS reg_id, r.color,
@@ -89,15 +93,46 @@ $getRegPools = function(PDO $pdo, int $yearId, int $sportId){
 };
 
 $bestText = function(array $r): string {
+  $time = formatTime($r['best_time'] ?? '');
+  $year = trim((string)($r['best_year_be'] ?? ''));
+  
   if (!empty($r['best_student_id']) && !empty($r['best_student_name'])) {
-    $t = trim((string)$r['best_time']);
-    return $t!=='' ? "{$r['best_student_name']} ({$t})" : $r['best_student_name'];
+    $name = htmlspecialchars($r['best_student_name'], ENT_QUOTES, 'UTF-8');
+    if ($time !== '—' && $year !== '') {
+      return "{$name} ({$time}, ปีการศึกษา {$year})";
+    } elseif ($time !== '—') {
+      return "{$name} ({$time})";
+    } else {
+      return $name;
+    }
   }
-  if (!empty($r['best_time']) && empty($r['best_student_name']) && !empty($r['notes']))
-    return htmlspecialchars($r['notes'],ENT_QUOTES,'UTF-8') . ' (' . htmlspecialchars($r['best_time']) . ')';
-  if (!empty($r['notes'])) return htmlspecialchars($r['notes'],ENT_QUOTES,'UTF-8');
+  if (!empty($r['notes'])) {
+    $notes = htmlspecialchars($r['notes'], ENT_QUOTES, 'UTF-8');
+    if ($time !== '—' && $year !== '') {
+      return "{$notes} ({$time}, ปีการศึกษา {$year})";
+    } elseif ($time !== '—') {
+      return "{$notes} ({$time})";
+    } else {
+      return $notes;
+    }
+  }
   return '—';
 };
+
+function formatTime($seconds) {
+  if ($seconds === null || $seconds === '') return '—';
+  $sec = (float)$seconds;
+  
+  if ($sec < 60) {
+    // น้อยกว่า 60 วินาที → แสดงเป็นวินาที
+    return number_format($sec, 2, '.', '') . ' วินาที';
+  } else {
+    // 60 วินาทีขึ้นไป → แปลงเป็นนาที:วินาที
+    $minutes = floor($sec / 60);
+    $remainSec = $sec - ($minutes * 60);
+    return $minutes . ':' . number_format($remainSec, 2, '.', '') . ' นาที';
+  }
+}
 
 ob_start();
 ?>
@@ -168,7 +203,7 @@ ob_start();
       <img class="logo" src="<?= 'uploads/logo/' . basename($GLOBALS['logoPath']) ?>" alt="logo">
     <?php else: ?><div class="logo" style="font-weight:bold;">LOGO</div><?php endif; ?>
     <h1>สูจิบัตรกรีฑา</h1>
-    <h2><?=$yearName?></h2>
+    <h2>กีฬาราชพฤกษ์เกมส์ ครั้งที่ <?=$gameNumber?> <?=$yearName?></h2>
   </div>
   
   <?php $cnt=0;
@@ -185,7 +220,7 @@ ob_start();
     <div class="title-row">
       <div class="event-title"><?=$title?></div>
       <?php if(!empty($best)): ?>
-        <div class="best-stat">สถิติดีที่สุด: <?=$best?></div> <!-- สถิติดีที่สุด: ดำ-หนา-14pt -->
+        <div class="best-stat">สถิติดีที่สุด: <?=$best?></div>
       <?php endif; ?>
     </div>
   
@@ -195,7 +230,6 @@ ob_start();
       $lanesMap = $getLanesRaw($pdo,(int)$h['id']);
       $lanesUsed=(int)$h['lanes_used'];
     ?>
-      <!-- ฮีต header ถูกตัดออก ตามคำขอ (ไม่แสดง 'ฮีต X (ใช้ Y ลู่) • ...') -->
       <table>
         <thead>
           <tr>
@@ -251,7 +285,7 @@ ob_start();
             }
           }
 
-                    // ทำข้อความหลายบรรทัด — แยก "ชื่อ", "ชั้น", "เลขที่" คนละคอลัมน์
+          // ทำข้อความหลายบรรทัด — แยก "ชื่อ", "ชั้น", "เลขที่" คนละคอลัมน์
           $nameCell = $classCell = $noCell = '&nbsp;';
 
           if (count($members) > 0) {

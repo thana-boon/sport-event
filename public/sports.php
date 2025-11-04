@@ -141,30 +141,139 @@ if ($action === 'delete' && $_SERVER['REQUEST_METHOD'] === 'POST') {
   }
 }
 
-/* COPY FROM PREVIOUS YEAR */
+/* DELETE ALL SPORTS */
+if ($action === 'delete_all' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $confirm = trim($_POST['confirm_delete'] ?? '');
+    if ($confirm === 'DELETE') {
+        try {
+            $pdo->beginTransaction();
+            
+            // 1. ลบ track_results (เชื่อมผ่าน athletics_events.id = track_results.heat_id)
+            $stmt = $pdo->prepare("
+                DELETE tr FROM track_results tr
+                INNER JOIN athletics_events ae ON ae.id = tr.heat_id
+                INNER JOIN sports s ON s.id = ae.sport_id
+                WHERE s.year_id = ?
+            ");
+            $stmt->execute([$yearId]);
+            $delTrack = $stmt->rowCount();
+            
+            // 2. ลบ athletics_events
+            $stmt = $pdo->prepare("
+                DELETE ae FROM athletics_events ae
+                INNER JOIN sports s ON s.id = ae.sport_id
+                WHERE s.year_id = ?
+            ");
+            $stmt->execute([$yearId]);
+            $delAth = $stmt->rowCount();
+            
+            // 3. ลบ registrations
+            $stmt = $pdo->prepare("
+                DELETE r FROM registrations r
+                INNER JOIN sports s ON s.id = r.sport_id
+                WHERE s.year_id = ?
+            ");
+            $stmt->execute([$yearId]);
+            $delReg = $stmt->rowCount();
+            
+            // 4. ลบกีฬา
+            $stmt = $pdo->prepare("DELETE FROM sports WHERE year_id=?");
+            $stmt->execute([$yearId]);
+            $delSports = $stmt->rowCount();
+            
+            $pdo->commit();
+            
+            $messages[] = "✅ ลบข้อมูลเรียบร้อย:<br>
+                          - กีฬา: {$delSports} รายการ<br>
+                          - การลงทะเบียน: {$delReg} รายการ<br>
+                          - กรีฑา (athletics_events): {$delAth} รายการ<br>
+                          - ผลการแข่งขัน (track_results): {$delTrack} รายการ";
+         } catch (Throwable $e) {
+            $pdo->rollBack();
+            $errors[] = 'ลบไม่สำเร็จ: '.e($e->getMessage());
+         }
+     } else {
+         $errors[] = 'ยืนยันไม่ถูกต้อง (ต้องพิมพ์คำว่า DELETE ตัวพิมพ์ใหญ่)';
+     }
+}
+
+/* COPY FROM PREVIOUS YEAR (ใช้ logic เดียวกับ CSV Import) */
 if ($action === 'copy_prev' && $_SERVER['REQUEST_METHOD'] === 'POST') {
   if (!$prevYearId) {
     $errors[]='ไม่พบปีการศึกษาก่อนหน้า';
   } else {
     try {
-      $pdo->beginTransaction();
-      // คัดลอกทั้งชุด (แม้ category_id เดิม) → ถ้า duplicate ให้ UPDATE
-      $sql = "
-        INSERT INTO sports(year_id, category_id, name, gender, participant_type, team_size, grade_levels, is_active)
-        SELECT :cur, s.category_id, s.name, s.gender, s.participant_type, s.team_size, s.grade_levels, s.is_active
-        FROM sports s WHERE s.year_id=:prev
-        ON DUPLICATE KEY UPDATE
-          category_id=VALUES(category_id),
-          team_size=VALUES(team_size),
-          grade_levels=VALUES(grade_levels),
-          is_active=VALUES(is_active)";
-      $st = $pdo->prepare($sql);
-      $st->execute([':cur'=>$yearId, ':prev'=>$prevYearId]);
-      $pdo->commit();
-      $messages[]='คัดลอกจากปีที่แล้วเรียบร้อย';
-    } catch(Throwable $e) {
-      $pdo->rollBack();
-      $errors[]='คัดลอกไม่สำเร็จ: '.e($e->getMessage());
+      // 1. ดึงข้อมูลจากปีที่แล้ว (เหมือน CSV Export)
+      $stmt = $pdo->prepare("
+        SELECT s.name, s.gender, sc.name AS cat_name, s.participant_type, s.team_size, s.grade_levels
+        FROM sports s
+        JOIN sport_categories sc ON sc.id = s.category_id
+        WHERE s.year_id = ?
+        ORDER BY sc.name, s.name
+      ");
+      $stmt->execute([$prevYearId]);
+      $prevSports = $stmt->fetchAll(PDO::FETCH_ASSOC);
+      
+      if (empty($prevSports)) {
+        $errors[] = "ปีที่แล้ว (ID: {$prevYearId}) ไม่มีข้อมูลกีฬาให้คัดลอก";
+      } else {
+        // 2. สร้าง map ชื่อประเภท → id (เฉพาะที่ active ในปีนี้)
+        $catMap = [];
+        foreach ($categories as $c) {
+          $catMap[$c['name']] = (int)$c['id'];
+        }
+        
+        // 3. Import (ใช้ logic เดียวกับ CSV Import)
+        $pdo->beginTransaction();
+        $ins = 0;
+        $upd = 0;
+        $skip = 0;
+        
+        foreach ($prevSports as $row) {
+          $name   = trim($row['name']);
+          $gender = trim($row['gender']);
+          $catName= trim($row['cat_name']);
+          $ptype  = trim($row['participant_type']);
+          $size   = (int)$row['team_size'];
+          $grades = normalizeGrades($row['grade_levels']);
+          
+          // ตรวจสอบข้อมูลขั้นต่ำ
+          if ($name === '' || !isset($catMap[$catName]) || !in_array($gender, $genders, true) || !in_array($ptype, $ptypes, true) || $grades === '') {
+            $skip++;
+            continue;
+          }
+          $catId = $catMap[$catName];
+          
+          // ตรวจว่ามีอยู่แล้วหรือไม่ในปีนี้ (ตาม unique key: year_id, name, gender, participant_type)
+          $chk = $pdo->prepare("SELECT id FROM sports WHERE year_id=? AND name=? AND gender=? AND participant_type=? LIMIT 1");
+          $chk->execute([$yearId, $name, $gender, $ptype]);
+          $exists = $chk->fetchColumn();
+          
+          if ($exists) {
+            // อัปเดตข้อมูล (category, team_size, grade_levels, is_active=1)
+            $stmt = $pdo->prepare("UPDATE sports SET category_id=?, team_size=?, grade_levels=?, is_active=1 WHERE id=?");
+            $stmt->execute([$catId, $size, $grades, $exists]);
+            $upd++;
+          } else {
+            // เพิ่มใหม่
+            $stmt = $pdo->prepare("INSERT INTO sports(year_id, category_id, name, gender, participant_type, team_size, grade_levels, is_active)
+                                   VALUES(?,?,?,?,?,?,?,1)");
+            $stmt->execute([$yearId, $catId, $name, $gender, $ptype, $size, $grades]);
+            $ins++;
+          }
+        }
+        
+        $pdo->commit();
+        
+        $messages[] = "✅ คัดลอกจากปีที่แล้วเรียบร้อย:<br>
+                      - ปีที่แล้ว (ID: {$prevYearId}) มีกีฬา " . count($prevSports) . " รายการ<br>
+                      - เพิ่มใหม่: <strong>{$ins}</strong> รายการ<br>
+                      - อัปเดต: {$upd} รายการ<br>
+                      - ข้าม: {$skip} รายการ";
+      }
+    } catch (Throwable $e) {
+      if ($pdo->inTransaction()) $pdo->rollBack();
+      $errors[] = 'คัดลอกไม่สำเร็จ: ' . e($e->getMessage());
     }
   }
 }
@@ -187,7 +296,7 @@ if (($_GET['action'] ?? '') === 'export') {
   header('Content-Disposition: attachment; filename="sports_'.$yearId.'.csv"');
   echo "\xEF\xBB\xBF";
   $out=fopen('php://output','w');
-  fputcsv($out, ['กีฬา','เพศ','ประเภทกีฬา','ประเภทผู้เข้แข่งขัน','จำนวน','ระดับชั้น']);
+  fputcsv($out, ['กีฬา','เพศ','ประเภทกีฬา','ประเภทผู้เข้าร่วม','จำนวน','ระดับชั้น']);
   $q = $pdo->prepare("SELECT s.name, s.gender, sc.name AS cat_name, s.participant_type, s.team_size, s.grade_levels
                       FROM sports s JOIN sport_categories sc ON sc.id=s.category_id
                       WHERE s.year_id=? ORDER BY sc.name, s.name");
@@ -207,13 +316,14 @@ if ($action==='import_csv' && $_SERVER['REQUEST_METHOD']==='POST') {
     $h=fopen($path,'r');
     if(!$h){ $errors[]='เปิดไฟล์ไม่ได้'; }
     else{
+      // อ่านบรรทัดแรก (header) — ตัด BOM UTF-8 ถ้ามี
       $first=fgets($h);
       if(substr($first,0,3)==="\xEF\xBB\xBF") $first=substr($first,3);
       $header=str_getcsv($first);
       $expected=['กีฬา','เพศ','ประเภทกีฬา','ประเภทผู้เข้แข่งขัน','จำนวน','ระดับชั้น'];
       $norm=fn($a)=>array_map('trim',$a);
       if($norm($header)!==$expected){
-        $errors[]='หัวคอลัมน์ไม่ตรงเทมเพลต';
+        $errors[]='หัวคอลัมน์ไม่ตรงเทมเพลต (ต้องการ: '.implode(', ',$expected).')';
       }else{
         $ins=0;$upd=0;$skip=0;
 
@@ -225,24 +335,33 @@ if ($action==='import_csv' && $_SERVER['REQUEST_METHOD']==='POST') {
         try{
           while(($row=fgetcsv($h))!==false){
             if(count($row)<6){ $skip++; continue; }
-            [$name,$gender,$catName,$ptype,$size,$grades]=$row;
+            [$name,$gender,$catName,$ptype,$sizeRaw,$grades]=$row;
             $name=trim($name); $gender=trim($gender); $catName=trim($catName); $ptype=trim($ptype);
-            $size=(int)$size; if($size<=0) $size=1; $grades=normalizeGrades($grades);
+            $size=(int)$sizeRaw; if($size<=0) $size=1;
+            $grades=normalizeGrades($grades);
 
+            // ตรวจสอบข้อมูลขั้นต่ำ
             if($name==='' || !isset($catMap[$catName]) || !in_array($gender,$genders,true) || !in_array($ptype,$ptypes,true) || $grades===''){
               $skip++; continue;
             }
             $catId=$catMap[$catName];
 
-            // มีอยู่ไหมในปีนี้ (ตาม unique key)
+            // ตรวจว่ามีอยู่แล้วหรือไม่ (ตาม unique key: year_id, name, gender, participant_type)
             $chk=$pdo->prepare("SELECT id FROM sports WHERE year_id=? AND name=? AND gender=? AND participant_type=? LIMIT 1");
             $chk->execute([$yearId,$name,$gender,$ptype]);
             $exists=$chk->fetchColumn();
 
             if($exists){
-              // update
+              // อัปเดตข้อมูล (category, team_size, grade_levels, is_active=1)
+              $stmt=$pdo->prepare("UPDATE sports SET category_id=?, team_size=?, grade_levels=?, is_active=1 WHERE id=?");
+              $stmt->execute([$catId,$size,$grades,$exists]);
+              $upd++;
             }else{
-              // insert
+              // เพิ่มใหม่
+              $stmt=$pdo->prepare("INSERT INTO sports(year_id, category_id, name, gender, participant_type, team_size, grade_levels, is_active)
+                                   VALUES(?,?,?,?,?,?,?,1)");
+              $stmt->execute([$yearId,$catId,$name,$gender,$ptype,$size,$grades]);
+              $ins++;
             }
           }
           $pdo->commit();
@@ -384,6 +503,16 @@ include __DIR__ . '/../includes/navbar.php';
           <div class="d-grid gap-2">
             <a class="btn btn-outline-primary" href="<?php echo BASE_URL; ?>/sports.php?action=export">ส่งออก CSV</a>
           </div>
+        </div>
+      </div>
+
+      <div class="card rounded-4 shadow-sm border-0 mt-3">
+        <div class="card-body">
+          <h5 class="card-title mb-3">เครื่องมือจัดการ</h5>
+          <button class="btn btn-outline-danger w-100" data-bs-toggle="modal" data-bs-target="#deleteAllModal">
+            ลบกีฬาทั้งหมด (ปีปัจจุบัน)
+          </button>
+          <div class="small text-muted mt-2">* จะลบเฉพาะกีฬาในปีนี้ (ไม่กระทบปีอื่น)</div>
         </div>
       </div>
 
@@ -571,6 +700,44 @@ include __DIR__ . '/../includes/navbar.php';
       <div class="modal-footer">
         <button class="btn btn-light" type="button" data-bs-dismiss="modal">ยกเลิก</button>
         <button class="btn btn-primary" type="submit">บันทึก</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Delete All Modal -->
+<div class="modal fade" id="deleteAllModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <form class="modal-content" method="post" action="<?php echo BASE_URL; ?>/sports.php">
+      <input type="hidden" name="action" value="delete_all">
+      <div class="modal-header bg-danger text-white">
+        <h5 class="modal-title">⚠️ ลบกีฬาทั้งหมด</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-danger mb-3">
+          <strong>คำเตือน:</strong> การกระทำนี้จะลบ<strong>กีฬาทั้งหมด</strong>ในปีการศึกษาปัจจุบัน และ<strong>ไม่สามารถกู้คืนได้</strong>
+        </div>
+        <p class="mb-2">ข้อมูลที่จะถูกลบ:</p>
+        <ul class="mb-3">
+          <li>รายการกีฬาทั้งหมดในปีนี้ (ตาราง <code>sports</code>)</li>
+          <li><strong class="text-danger">การลงทะเบียนนักกีฬา</strong> ที่เชื่อมโยงกับกีฬาในปีนี้ (ตาราง <code>registrations</code>)</li>
+          <li><strong class="text-danger">ผลการแข่งขัน</strong> ที่เชื่อมโยงกับกีฬาในปีนี้ (ตาราง <code>track_results</code>)</li>
+          <li><strong class="text-danger">รายการกรีฑา</strong> ที่เชื่อมโยงกับกีฬาในปีนี้ (ตาราง <code>athletics_events</code>)</li>
+        </ul>
+        <p class="mb-2"><strong>ข้อมูลที่ยังคงอยู่:</strong></p>
+        <ul class="mb-3">
+          <li>ข้อมูลนักเรียน (ตาราง <code>students</code>)</li>
+          <li>ข้อมูลประเภทกีฬา (ตาราง <code>sport_categories</code>)</li>
+          <li>กีฬาในปีอื่น ๆ</li>
+        </ul>
+        <hr>
+        <p>กรุณาพิมพ์คำว่า <code class="text-danger fw-bold">DELETE</code> เพื่อยืนยัน:</p>
+        <input type="text" class="form-control" name="confirm_delete" placeholder="พิมพ์ DELETE" required autocomplete="off">
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-light" data-bs-dismiss="modal">ยกเลิก</button>
+        <button type="submit" class="btn btn-danger">ลบทั้งหมด</button>
       </div>
     </form>
   </div>

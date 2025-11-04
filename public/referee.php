@@ -1,98 +1,43 @@
 <?php
-// /public/referee.php — Admin scoring & aggregation page under main site
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../config/db.php';
 if (session_status() === PHP_SESSION_NONE) session_start();
-// TODO: Add your admin auth check here if needed
-?>
-<!doctype html>
-<html lang="th">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Admin | กำหนดคะแนน & รวมคะแนน</title>
-  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600&display=swap" rel="stylesheet">
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-  <style>
-    /* ใช้สีเดียวกับ regis.php / navbar (Bootstrap primary) */
-    :root{
-      --brand: #0d6efd;       /* primary */
-      --brand-600: #0a58ca;   /* primary-dark */
-      --page-bg: #f8fafc;
-      --card-bg: #ffffff;
-      --muted: #6b7280;
-    }
-    html,body { height:100%; }
-    body{
-      font-family:'Kanit', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-      background: linear-gradient(180deg, rgba(13,110,253,0.02), var(--page-bg));
-      color:#0b1a2b;
-    }
-    /* header styling to match main navbar (regis.php) */
-    header.app{
-      background: linear-gradient(90deg, var(--brand), var(--brand-600));
-      color: #fff;
-      box-shadow: 0 2px 0 rgba(0,0,0,0.04);
-    }
-    /* cards and controls */
-    .card{
-      border-radius: 0.75rem;
-      background: var(--card-bg);
-      border: 1px solid rgba(13,110,253,0.04);
-    }
-    .card .card-body { padding:1.25rem; }
-    .color-chip{ display:inline-flex; align-items:center; gap:.5rem; padding:.25rem .5rem; border-radius:999px; background:#eef2f7; font-weight:500; }
-    .color-dot{ width:.8rem; height:.8rem; border-radius:50%; display:inline-block; }
-    .score{ font-variant-numeric: tabular-nums; }
-    .pill{ border-radius: 999px; padding:.15rem .6rem; }
-    .table-striped>tbody>tr:nth-of-type(odd){ background-color: #fbfdff; }
-    .form-control, .btn { border-radius: 0.5rem; }
-    .btn-primary { background: var(--brand); border-color: var(--brand); }
-    .btn-primary:hover { background: var(--brand-600); border-color: var(--brand-600); }
-    .small { color: var(--muted); }
-    @media (max-width: 992px){
-      main.container { padding-left: 1rem; padding-right: 1rem; }
-    }
-  </style>
-</head>
-<body>
 
-<?php
-// Include main navbar if exists, otherwise try several fallback header files,
-// if none found render a minimal fallback header (as before)
-$navFile = __DIR__ . '/../includes/navbar.php';
-if (file_exists($navFile)) {
-  include $navFile;
-} else {
-  $fallbackPaths = [
-    __DIR__ . '/../includes/header.php',
-    __DIR__ . '/includes/header.php',
-    __DIR__ . '/header.php',
-    __DIR__ . '/partials/header.php'
-  ];
-  $included = false;
-  foreach ($fallbackPaths as $fp) {
-    if (file_exists($fp)) { include $fp; $included = true; break; }
-  }
-  if (!$included) {
-    // minimal fallback header
-    ?>
-    <header class="app">
-      <div class="container py-3 d-flex justify-content-between align-items-center">
-        <div class="fs-5 fw-semibold">หน้าผู้ดูแล — ตั้งค่าคะแนน & รวมคะแนน</div>
-        <nav class="d-flex gap-2">
-          <a class="btn btn-sm btn-light" href="<?= BASE_URL ?>/">หน้าแรก</a>
-        </nav>
-      </div>
-    </header>
-    <?php
-  }
-}
+$pageTitle = 'กำหนดคะแนน & รวมคะแนน';
+include __DIR__ . '/../includes/header.php';
+include __DIR__ . '/../includes/navbar.php';
 ?>
+
+<style>
+  /* Custom styles สำหรับหน้านี้เท่านั้น */
+  .color-chip { display:inline-flex; align-items:center; gap:.5rem; padding:.25rem .5rem; border-radius:999px; background:#eef2f7; font-weight:500; }
+  .color-dot { width:.8rem; height:.8rem; border-radius:50%; display:inline-block; }
+  .score { font-variant-numeric: tabular-nums; }
+  .table-striped>tbody>tr:nth-of-type(odd){ background-color: #fbfdff; }
+</style>
 
 <main class="container py-4">
-
   <div class="row g-4">
+    <!-- ส่วนที่ 1: บันทึกผลการแข่งขัน -->
+    <div class="col-12">
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <div class="d-flex align-items-center justify-content-between mb-3">
+            <h5 class="mb-0">บันทึกผลการแข่งขัน</h5>
+            <a href="<?= BASE_URL ?>/referee/index.php" class="btn btn-outline-primary btn-sm" target="_blank">
+              เปิดหน้าบันทึกผลแบบเต็ม →
+            </a>
+          </div>
+          <iframe 
+            src="<?= BASE_URL ?>/referee/index.php" 
+            style="width:100%; height:600px; border:1px solid #e5e7eb; border-radius:0.5rem;"
+            title="บันทึกผลการแข่งขัน">
+          </iframe>
+        </div>
+      </div>
+    </div>
+
+    <!-- ส่วนที่ 2: กำหนดคะแนน -->
     <div class="col-12 col-xl-5">
       <div class="card shadow-sm">
         <div class="card-body">
@@ -153,15 +98,12 @@ if (file_exists($navFile)) {
           </div>
         </div>
       </div>
-
     </div>
   </div>
-
 </main>
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
-const API = 'referee_api.php'; // backend endpoint placed in /public
+const API = 'referee_api.php';
 const COLORS=[{name:'ส้ม',hex:'#FFA726'},{name:'เขียว',hex:'#4CAF50'},{name:'ชมพู',hex:'#EC407A'},{name:'ฟ้า',hex:'#29B6F6'}];
 
 async function init(){
@@ -227,7 +169,7 @@ function renderCategories(categories){
       </div>`);
   });
   document.getElementById('btnCompute').onclick = computeScores;
-  document.getElementById('btnExport').onclick = exportCSV;
+  document.getElementById('btnExport').onclick = () => exportCSV(',', 'scores.csv');
 }
 function selectedCategories(){
   return Array.from(document.querySelectorAll('#catChecks input:checked')).map(ip => parseInt(ip.value,10));
@@ -260,41 +202,28 @@ function renderScores(summary, breakdown){
   });
 }
 function exportCSV(delim = ',', filename = 'scores.csv') {
-  // เก็บข้อมูลจากตาราง
   const rows = Array.from(document.querySelectorAll('#scoreBody tr')).map(tr =>
     Array.from(tr.children).map(td => td.innerText.replace(/\s+/g, ' ').trim())
   );
-
   const header = ['สี','คะแนนรวม','รายละเอียด'];
-
-  // แปลงเป็น 1 บรรทัด (quote เฉพาะกรณี CSV)
   const toLine = (arr) => arr.map((v) => {
     const s = String(v).replace(/\r?\n/g, ' ').replace(/"/g, '""');
-    return (delim === ',') ? `"${s}"` : s; // CSV -> "..."  /  TSV -> no quotes
+    return (delim === ',') ? `"${s}"` : s;
   }).join(delim);
-
-  // ใส่ prefix 'sep=,' สำหรับ Excel + ใช้ BOM + CRLF
   const prefix = (delim === ',') ? 'sep=,\r\n' : '';
   const lines  = [toLine(header)].concat(rows.map(toLine)).join('\r\n');
   const BOM    = '\uFEFF';
   const blob   = new Blob([BOM + prefix + lines], {type: 'text/csv;charset=utf-8;'});
-
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = filename;            // << กำหนดให้เป็น .csv เสมอ
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(a.href);
 }
 
-// ปุ่ม Export (CSV)
-document.getElementById('btnExport').onclick = () => exportCSV(',', 'scores.csv');
-
-// ถ้าอยากกดส่งออกแบบแท็บคั่นแต่ยังใช้ .csv ก็ทำได้เช่นกัน:
-// document.getElementById('btnExport').onclick = () => exportCSV('\t', 'scores.csv');
-
 init();
 </script>
-</body>
-</html>
+
+<?php include __DIR__ . '/../includes/footer.php'; ?>

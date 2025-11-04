@@ -12,7 +12,11 @@ if (empty($_SESSION['admin'])) {
 
 $pdo = db();
 function e($s){ return htmlspecialchars($s, ENT_QUOTES, 'UTF-8'); }
-function parse_grade_levels($s){ $p=array_filter(array_map('trim', explode(',', (string)$s))); return $p?:[]; }
+function parse_grade_levels($s){
+  // normalize: ลบจุด (.) ออก เพื่อให้ "ป.4" กลายเป็น "ป4"
+  $p=array_filter(array_map(function($x){ return str_replace('.', '', trim($x)); }, explode(',', (string)$s)));
+  return $p?:[];
+}
 function name_is_male_prefix($f){ return mb_strpos($f,'เด็กชาย')===0 || mb_strpos($f,'นาย')===0; }
 function name_is_female_prefix($f){ return mb_strpos($f,'เด็กหญิง')===0 || mb_strpos($f,'นางสาว')===0; }
 
@@ -94,7 +98,9 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['action']??'')==='admin_save_
           if(empty($students[$sid])){ $errors[]='พบรหัสนักเรียนที่ไม่ถูกต้อง'; break; }
           $stu=$students[$sid];
           if($stu['color']!==$teamColor){ $errors[]='มีนักเรียนที่ไม่ใช่สีที่เลือก'; break; }
-          if($allowed && !in_array($stu['class_level'],$allowed,true)){ $errors[]='ชั้นไม่ตรงตามเงื่อนไขกีฬา'; break; }
+          // normalize ทั้งสองฝั่ง (ลบจุด) ก่อนเทียบ
+          $stuLevel = str_replace('.', '', trim($stu['class_level']));
+          if($allowed && !in_array($stuLevel,$allowed,true)){ $errors[]='ชั้นไม่ตรงตามเงื่อนไขกีฬา'; break; }
           if($gender==='ช' && !name_is_male_prefix($stu['first_name'])){ $errors[]='มีนักเรียนที่ไม่ใช่เพศชาย'; break; }
           if($gender==='ญ' && !name_is_female_prefix($stu['first_name'])){ $errors[]='มีนักเรียนที่ไม่ใช่เพศหญิง'; break; }
         }
@@ -134,6 +140,23 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['action']??'')==='admin_save_
   }
 }
 
+/* 6) ลบนักเรียนที่ลงทะเบียนทั้งหมด */
+if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['action']??'')==='delete_all_registrations') {
+  $confirm = trim($_POST['confirm_delete'] ?? '');
+  if ($confirm === 'DELETE') {
+    try {
+      $stmt = $pdo->prepare("DELETE FROM registrations WHERE year_id=?");
+      $stmt->execute([$yearId]);
+      $deleted = $stmt->rowCount();
+      $messages[] = "✅ ลบการลงทะเบียนทั้งหมด {$deleted} รายการ เรียบร้อย (ปีการศึกษา {$yearBe})";
+    } catch (Throwable $e) {
+      $errors[] = 'ลบไม่สำเร็จ: '.e($e->getMessage());
+    }
+  } else {
+    $errors[] = 'ยืนยันไม่ถูกต้อง (ต้องพิมพ์คำว่า DELETE ตัวพิมพ์ใหญ่)';
+  }
+}
+
 /* 4) โหลดโหมดจัดทีม (ผ่าน GET) */
 $sportId = (int)($_GET['sport_id'] ?? 0);
 $teamColor = trim($_GET['color'] ?? '');
@@ -151,7 +174,7 @@ if ($sportId>0 && $teamColor!=='') {
       WHERE r.year_id=? AND r.sport_id=? AND r.color=?
       ORDER BY
         CASE WHEN s.class_level LIKE 'ป%' THEN 1 WHEN s.class_level LIKE 'ม%' THEN 2 ELSE 3 END,
-        CAST(SUBSTRING(s.class_level,2) AS UNSIGNED), s.class_room, s.number_in_room, s.first_name, s.last_name
+        CAST(REPLACE(SUBSTRING(s.class_level,2), '.', '') AS UNSIGNED), s.class_room, s.number_in_room, s.first_name, s.last_name
     ");
     $qPref->execute([$yearId,$sportId,$teamColor]);
     $prefill=$qPref->fetchAll(PDO::FETCH_ASSOC);
@@ -160,16 +183,29 @@ if ($sportId>0 && $teamColor!=='') {
     if($gender==='ช') $genderCond="(s.first_name LIKE 'เด็กชาย%' OR s.first_name LIKE 'นาย%')";
     elseif($gender==='ญ') $genderCond="(s.first_name LIKE 'เด็กหญิง%' OR s.first_name LIKE 'นางสาว%')";
 
+   // เปลี่ยนจาก ? เป็น named param :lv0, :lv1, ... เพื่อให้ตรงกับจำนวน bind
+   $levelPlaceholders = [];
+   if ($levels) {
+     foreach ($levels as $idx => $lv) {
+       $levelPlaceholders[] = ":lv{$idx}";
+     }
+   }
+   
     $sql="
       SELECT s.id, CONCAT(s.first_name,' ',s.last_name) AS fullname, s.student_code, s.class_level, s.class_room, s.number_in_room
       FROM students s
-      WHERE s.year_id=? AND s.color=? AND $genderCond
-      ".($levels ? "AND s.class_level IN (".implode(',',array_fill(0,count($levels),'?')).")" : "")."
+      WHERE s.year_id=:yid AND s.color=:col AND $genderCond
+      ".($levels ? "AND REPLACE(s.class_level, '.', '') IN (".implode(',', $levelPlaceholders).")" : "")."
       ORDER BY
         CASE WHEN s.class_level LIKE 'ป%' THEN 1 WHEN s.class_level LIKE 'ม%' THEN 2 ELSE 3 END,
-        CAST(SUBSTRING(s.class_level,2) AS UNSIGNED), s.class_room, s.number_in_room, s.first_name, s.last_name
+        CAST(REPLACE(SUBSTRING(s.class_level,2), '.', '') AS UNSIGNED), s.class_room, s.number_in_room, s.first_name, s.last_name
     ";
-    $bind=[$yearId,$teamColor]; if($levels) foreach($levels as $lv){ $bind[]=$lv; }
+   $bind=['yid'=>$yearId, 'col'=>$teamColor];
+   if($levels) {
+     foreach($levels as $idx => $lv) {
+       $bind["lv{$idx}"] = $lv;
+     }
+   }
     $q=$pdo->prepare($sql); $q->execute($bind); $eligible=$q->fetchAll(PDO::FETCH_ASSOC);
 
     foreach(array_merge($prefill,$eligible) as $r){
@@ -235,6 +271,16 @@ include __DIR__ . '/../includes/navbar.php';
         <div class="col-12"><div class="small text-muted">* ผู้ดูแลจัดทีมได้เสมอ แม้ระบบปิดรับลงทะเบียน</div></div>
       </form>
       <?php endif; ?>
+    </div>
+  </div>
+
+  <div class="card border-0 shadow-sm rounded-4 mb-4">
+    <div class="card-body">
+      <h5 class="card-title mb-3">เครื่องมือจัดการ</h5>
+      <button class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteAllRegsModal">
+        ลบการลงทะเบียนทั้งหมด (ปีการศึกษา <?php echo e($yearBe?:'-'); ?>)
+      </button>
+      <div class="small text-muted mt-2">* จะลบเฉพาะข้อมูลลงทะเบียน (ตาราง registrations) ไม่ลบข้อมูลนักเรียน/กีฬา</div>
     </div>
   </div>
 
@@ -393,6 +439,41 @@ include __DIR__ . '/../includes/navbar.php';
   </div>
 </main>
 <?php include __DIR__ . '/../includes/footer.php'; ?>
+
+<!-- Delete All Registrations Modal -->
+<div class="modal fade" id="deleteAllRegsModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <form class="modal-content" method="post" action="<?php echo BASE_URL; ?>/regis.php">
+      <input type="hidden" name="action" value="delete_all_registrations">
+      <div class="modal-header bg-danger text-white">
+        <h5 class="modal-title">⚠️ ลบการลงทะเบียนทั้งหมด</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-danger mb-3">
+          <strong>คำเตือน:</strong> การกระทำนี้จะลบ<strong>ข้อมูลลงทะเบียนทั้งหมด</strong>ในปีการศึกษา <?php echo e($yearBe?:'-'); ?> (ทุกกีฬา ทุกสี) และ<strong>ไม่สามารถกู้คืนได้</strong>
+        </div>
+        <p class="mb-2">ข้อมูลที่จะถูกลบ:</p>
+        <ul class="mb-3">
+          <li>รายการลงทะเบียนทั้งหมด (ตาราง <code>registrations</code>)</li>
+        </ul>
+        <p class="mb-2"><strong>ข้อมูลที่ยังคงอยู่:</strong></p>
+        <ul class="mb-3">
+          <li>ข้อมูลนักเรียน (ตาราง <code>students</code>)</li>
+          <li>ข้อมูลกีฬา (ตาราง <code>sports</code>)</li>
+          <li>ข้อมูลผลการแข่งขัน (ตาราง <code>track_results</code>, <code>athletics_events</code>)</li>
+        </ul>
+        <hr>
+        <p>กรุณาพิมพ์คำว่า <code class="text-danger fw-bold">DELETE</code> เพื่อยืนยัน:</p>
+        <input type="text" class="form-control" name="confirm_delete" placeholder="พิมพ์ DELETE" required autocomplete="off">
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-light" data-bs-dismiss="modal">ยกเลิก</button>
+        <button type="submit" class="btn btn-danger">ลบทั้งหมด</button>
+      </div>
+    </form>
+  </div>
+</div>
 
 <style>
 /* ปุ่มสีชมพู (Bootstrap ไม่มี) */

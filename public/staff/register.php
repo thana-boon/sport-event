@@ -1,14 +1,5 @@
 <?php
-// public/staff/register.php — เวอร์ชัน “ปิดแก้ไขเมื่อ admin ปิดรับลงทะเบียน” (+เตือนเกินเพดานต่อประเภท)
-// ---------------------------------------------------------------
-// คุณสมบัติ:
-//  - ถ้า admin ปิดสวิตช์ลงทะเบียน (ที่ academic_years.registration_is_open = 0
-//    หรือผ่าน helper registration_open($pdo) == false)
-//    * ปุ่มบันทึกจะ disabled
-//    * ปุ่ม "ลงทะเบียน/แก้ไข" ในหน้ารายการจะ disabled
-//    * ถ้ามีการ POST จะไม่บันทึก และแจ้งเตือน
-// ---------------------------------------------------------------
-
+// public/staff/register.php — เวอร์ชัน "ปิดแก้ไขเมื่อ admin ปิดรับลงทะเบียน" (+เตือนเกินเพดานต่อประเภท)
 require_once __DIR__ . '/../../config/config.php';
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../lib/helpers.php';
@@ -23,14 +14,16 @@ $staff = $_SESSION['staff'];
 $staffColor = $staff['color'] ?? null;
 
 function e($s){ return htmlspecialchars($s, ENT_QUOTES, 'UTF-8'); }
-function parse_grade_levels($s){ $p=array_filter(array_map('trim', explode(',', (string)$s))); return $p?:[]; }
+function parse_grade_levels($s){
+  $p=array_filter(array_map(function($x){ return str_replace('.', '', trim($x)); }, explode(',', (string)$s)));
+  return $p?:[];
+}
 function name_is_male_prefix($firstName){
   return mb_strpos($firstName,'เด็กชาย')===0 || mb_strpos($firstName,'นาย')===0;
 }
 function name_is_female_prefix($firstName){
   return mb_strpos($firstName,'เด็กหญิง')===0 || mb_strpos($firstName,'นางสาว')===0;
 }
-// ใช้ helper ถ้ามี; ถ้าไม่มีให้เช็คคอลัมน์ registration_is_open โดยตรง
 function registration_open_safe(PDO $pdo): bool {
   if (function_exists('registration_open')) {
     return registration_open($pdo);
@@ -43,7 +36,7 @@ $yearId = active_year_id($pdo);
 if (!$yearId) {
   include __DIR__ . '/../../includes/header.php';
   include __DIR__ . '/navbar.php';
-  echo '<main class="container py-5"><div class="alert alert-warning">ยังไม่ได้ตั้งปีการศึกษาให้เป็น Active</div></main>';
+  echo '<main class="container py-5"><div class="alert alert-warning">⚠️ ยังไม่ได้ตั้งปีการศึกษาให้เป็น Active</div></main>';
   include __DIR__ . '/../../includes/footer.php';
   exit;
 }
@@ -67,10 +60,10 @@ $messages=[]; $warnings=[]; $errors=[];
 // -------- ACTION: บันทึก (แทนที่ทั้งชุดของสีนี้ในกีฬานี้) --------
 if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['action'] ?? '')==='save_lineup') {
   if (!$registrationOpen) {
-    $errors[] = 'ขณะนี้ปิดรับลงทะเบียน แก้ไขไม่ได้';
+    $errors[] = '⛔ ขณะนี้ปิดรับลงทะเบียน แก้ไขไม่ได้';
   } else {
     $sportId = (int)($_POST['sport_id'] ?? 0);
-    if ($sportId <= 0) { $errors[]='ไม่พบกีฬา'; }
+    if ($sportId <= 0) { $errors[]='❌ ไม่พบกีฬา'; }
 
     // ดึงข้อมูลกีฬา + หมวด + เพดานการลงต่อหมวด
     $st = $pdo->prepare("
@@ -84,7 +77,7 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['action'] ?? '')==='save_line
     ");
     $st->execute([$sportId,$yearId]);
     $sport = $st->fetch(PDO::FETCH_ASSOC);
-    if (!$sport) { $errors[]='ไม่พบกีฬานี้ในปีการศึกษาปัจจุบัน'; }
+    if (!$sport) { $errors[]='❌ ไม่พบกีฬานี้ในปีการศึกษาปัจจุบัน'; }
 
     // รวบรวม student_id_* (อนุญาตให้เว้นว่างได้)
     $teamSize = (int)($sport['team_size'] ?? 0);
@@ -95,7 +88,7 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['action'] ?? '')==='save_line
     }
     $chosen = array_values(array_unique($chosen));
     if (count($chosen) > $teamSize) {
-      $errors[] = 'จำนวนผู้เล่นเกินที่กำหนด (สูงสุด '.$teamSize.' คน)';
+      $errors[] = '⚠️ จำนวนผู้เล่นเกินที่กำหนด (สูงสุด '.$teamSize.' คน)';
     }
 
     if (!$errors) {
@@ -114,14 +107,16 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['action'] ?? '')==='save_line
       $gender = $sport['gender']; // 'ช','ญ','รวม'
 
       foreach ($chosen as $sid) {
-        if (empty($students[$sid])) { $errors[]='พบรหัสนักเรียนที่ไม่ถูกต้อง'; break; }
+        if (empty($students[$sid])) { $errors[]='❌ พบรหัสนักเรียนที่ไม่ถูกต้อง'; break; }
         $stu = $students[$sid];
-        if ($stu['color'] !== $staffColor) { $errors[]='มีนักเรียนที่ไม่ใช่สีของคุณ'; break; }
-        if ($allowedLevels && !in_array($stu['class_level'], $allowedLevels, true)) {
-          $errors[]='มีนักเรียนชั้นที่ไม่ตรงตามที่กีฬากำหนด'; break;
+        if ($stu['color'] !== $staffColor) { $errors[]='❌ มีนักเรียนที่ไม่ใช่สีของคุณ'; break; }
+        // normalize ทั้งสองฝั่ง (ลบจุด) ก่อนเทียบ
+        $stuLevel = str_replace('.', '', trim($stu['class_level']));
+        if ($allowedLevels && !in_array($stuLevel, $allowedLevels, true)) {
+          $errors[]='❌ มีนักเรียนชั้นที่ไม่ตรงตามที่กีฬากำหนด'; break;
         }
-        if ($gender==='ช' && !name_is_male_prefix($stu['first_name'])) { $errors[]='มีนักเรียนที่ไม่ใช่เพศชาย'; break; }
-        if ($gender==='ญ' && !name_is_female_prefix($stu['first_name'])) { $errors[]='มีนักเรียนที่ไม่ใช่เพศหญิง'; break; }
+        if ($gender==='ช' && !name_is_male_prefix($stu['first_name'])) { $errors[]='❌ มีนักเรียนที่ไม่ใช่เพศชาย'; break; }
+        if ($gender==='ญ' && !name_is_female_prefix($stu['first_name'])) { $errors[]='❌ มีนักเรียนที่ไม่ใช่เพศหญิง'; break; }
       }
 
       // ==== ตรวจเงื่อนไข "หนึ่งคนลงได้กี่กีฬาในหมวดนี้" (แจ้งเตือนเท่านั้น) ====
@@ -143,7 +138,7 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['action'] ?? '')==='save_line
             }
           }
           if ($overNames) {
-            $warnings[] = 'มีผู้เล่นที่ลงเกินจำนวนสูงสุดที่อนุญาตต่อประเภทกีฬา: <br>- '.e(implode('<br>- ', $overNames));
+            $warnings[] = '⚠️ มีผู้เล่นที่ลงเกินจำนวนสูงสุดที่อนุญาตต่อประเภทกีฬา: <br>- '.implode('<br>- ', array_map('e', $overNames));
           }
         }
       }
@@ -164,10 +159,10 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['action'] ?? '')==='save_line
             }
           }
           $pdo->commit();
-          $messages[] = 'บันทึกสำเร็จ: อัปเดตรายชื่อทีมสี'.$staffColor.' ในกีฬา '.e($sport['name']);
+          $messages[] = '✅ บันทึกสำเร็จ: อัปเดตรายชื่อทีมสี'.e($staffColor).' ในกีฬา '.e($sport['name']);
         }catch(Throwable $e){
           $pdo->rollBack();
-          $errors[] = 'บันทึกไม่สำเร็จ: '.$e->getMessage();
+          $errors[] = '❌ บันทึกไม่สำเร็จ: '.$e->getMessage();
         }
       }
     }
@@ -187,7 +182,10 @@ if ($sportId>0) {
     $levels = parse_grade_levels($sportDetail['grade_levels']);
     $gender = $sportDetail['gender'];
 
-    // รายชื่อที่ลงทะเบียนไว้แล้วของ “สีนี้”
+    // normalize class_level จาก students (ลบจุด) เพื่อเปรียบเทียบกับ grade_levels
+    // → ใช้ REPLACE(s.class_level, '.', '') ใน WHERE
+
+    // รายชื่อที่ลงทะเบียนไว้แล้วของ "สีนี้"
     $qPrefill = $pdo->prepare("
       SELECT s.id,
              CONCAT(s.first_name,' ',s.last_name) AS fullname,
@@ -199,7 +197,7 @@ if ($sportId>0) {
         CASE WHEN s.class_level LIKE 'ป%' THEN 1
              WHEN s.class_level LIKE 'ม%' THEN 2
              ELSE 3 END,
-        CAST(SUBSTRING(s.class_level, 2) AS UNSIGNED),
+        CAST(REPLACE(SUBSTRING(s.class_level, 2), '.', '') AS UNSIGNED),
         s.class_room, s.number_in_room, s.first_name, s.last_name
     ");
     $qPrefill->execute([$yearId,$sportId,$staffColor]);
@@ -213,25 +211,37 @@ if ($sportId>0) {
       $genderCond = "(s.first_name LIKE 'เด็กหญิง%' OR s.first_name LIKE 'นางสาว%')";
     }
 
-    // ดึง “นักเรียนที่เลือกได้”
+    // ดึง "นักเรียนที่เลือกได้" — ใช้ REPLACE(s.class_level, '.', '') เพื่อ normalize
+    // เปลี่ยนจาก ? เป็น named param :lv0, :lv1, ... เพื่อให้ตรงกับจำนวน bind
+    $levelPlaceholders = [];
+    if ($levels) {
+      foreach ($levels as $idx => $lv) {
+        $levelPlaceholders[] = ":lv{$idx}";
+      }
+    }
+
     $sql = "
       SELECT s.id,
              CONCAT(s.first_name,' ',s.last_name) AS fullname,
              s.student_code,
              s.class_level, s.class_room, s.number_in_room
       FROM students s
-      WHERE s.year_id=? AND s.color=? 
+      WHERE s.year_id=:yid AND s.color=:col
         AND $genderCond
-        ".($levels ? "AND s.class_level IN (" . implode(',', array_fill(0,count($levels),'?')). ")" : "")."
+        ".($levels ? "AND REPLACE(s.class_level, '.', '') IN (" . implode(',', $levelPlaceholders). ")" : "")."
       ORDER BY
         CASE WHEN s.class_level LIKE 'ป%' THEN 1
              WHEN s.class_level LIKE 'ม%' THEN 2
              ELSE 3 END,
-        CAST(SUBSTRING(s.class_level, 2) AS UNSIGNED),
+        CAST(REPLACE(SUBSTRING(s.class_level, 2), '.', '') AS UNSIGNED),
         s.class_room, s.number_in_room, s.first_name, s.last_name
     ";
-    $bind = [$yearId,$staffColor];
-    if ($levels) { foreach($levels as $lv){ $bind[]=$lv; } }
+    $bind = ['yid'=>$yearId, 'col'=>$staffColor];
+    if ($levels) {
+      foreach ($levels as $idx => $lv) {
+        $bind["lv{$idx}"] = $lv;
+      }
+    }
 
     $q = $pdo->prepare($sql);
     $q->execute($bind);
@@ -279,43 +289,128 @@ $stList = $pdo->prepare($sqlSports);
 $stList->execute(array_merge($params, [':color'=>$staffColor]));
 $sports = $stList->fetchAll(PDO::FETCH_ASSOC);
 
-// VIEW
+// Color themes
+$colorThemes = [
+  'เขียว' => ['bg' => '#d4edda', 'hex' => '#28a745', 'light' => '#e8f5e9'],
+  'ฟ้า'   => ['bg' => '#d1ecf1', 'hex' => '#17a2b8', 'light' => '#e1f5fe'],
+  'ชมพู'  => ['bg' => '#f8d7da', 'hex' => '#e83e8c', 'light' => '#fce4ec'],
+  'ส้ม'   => ['bg' => '#fff3cd', 'hex' => '#fd7e14', 'light' => '#fff8e1'],
+];
+$currentTheme = $colorThemes[$staffColor] ?? ['bg' => '#f8f9fa', 'hex' => '#6c757d', 'light' => '#f8f9fa'];
+
+$pageTitle = 'ลงทะเบียนกีฬา - สี' . $staffColor;
 include __DIR__ . '/../../includes/header.php';
 include __DIR__ . '/navbar.php';
 ?>
+
+<style>
+  body {
+    background: linear-gradient(135deg, <?php echo $currentTheme['light']; ?> 0%, #ffffff 100%);
+  }
+  .page-header {
+    background: linear-gradient(135deg, <?php echo $currentTheme['hex']; ?>, <?php echo $currentTheme['hex']; ?>dd);
+    color: white;
+    padding: 2rem;
+    border-radius: 1rem;
+    margin-bottom: 2rem;
+    box-shadow: 0 8px 24px <?php echo $currentTheme['hex']; ?>33;
+  }
+  .sport-card {
+    border-radius: 1rem;
+    border: 2px solid <?php echo $currentTheme['hex']; ?>33;
+    transition: all 0.2s;
+  }
+  .sport-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 16px rgba(0,0,0,0.1);
+    border-color: <?php echo $currentTheme['hex']; ?>;
+  }
+  .form-card {
+    background: white;
+    border-radius: 1rem;
+    border: 2px solid <?php echo $currentTheme['hex']; ?>33;
+  }
+  .player-input {
+    border-radius: 0.75rem;
+    border: 2px solid #e5e7eb;
+    transition: all 0.2s;
+  }
+  .player-input:focus {
+    border-color: <?php echo $currentTheme['hex']; ?>;
+    box-shadow: 0 0 0 0.2rem <?php echo $currentTheme['hex']; ?>33;
+  }
+  .status-badge {
+    padding: 0.4rem 0.9rem;
+    border-radius: 1rem;
+    font-weight: 500;
+  }
+  .filter-card {
+    background: white;
+    border-radius: 1rem;
+    border: 2px solid <?php echo $currentTheme['hex']; ?>33;
+  }
+</style>
+
 <main class="container py-4">
+  <!-- Page Header -->
+  <div class="page-header">
+    <div class="d-flex align-items-center justify-content-between">
+      <div>
+        <h3 class="mb-1">✍️ ลงทะเบียนกีฬา</h3>
+        <p class="mb-0 opacity-75">จัดการรายชื่อนักกีฬา สี<?php echo e($staffColor); ?></p>
+      </div>
+      <div class="text-end">
+        <div style="font-size: 2.5rem; opacity: 0.7;">🏆</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Alerts -->
   <?php if (!$registrationOpen): ?>
-    <div class="alert alert-warning">ระบบกำลังปิดรับลงทะเบียน ขณะนี้ดูข้อมูลได้อย่างเดียว</div>
+    <div class="alert alert-warning border-0 shadow-sm">
+      <strong>⛔ ระบบกำลังปิดรับลงทะเบียน</strong> ขณะนี้ดูข้อมูลได้อย่างเดียว
+    </div>
   <?php endif; ?>
 
   <?php if ($messages): ?>
-    <div class="alert alert-success"><?php echo implode('<br>', array_map('e',$messages)); ?></div>
+    <div class="alert alert-success border-0 shadow-sm">
+      <?php echo implode('<br>', $messages); ?>
+    </div>
   <?php endif; ?>
   <?php if ($warnings): ?>
-    <div class="alert alert-warning"><?php echo implode('<br>', $warnings); ?></div>
+    <div class="alert alert-warning border-0 shadow-sm">
+      <?php echo implode('<br>', $warnings); ?>
+    </div>
   <?php endif; ?>
   <?php if ($errors): ?>
-    <div class="alert alert-danger"><?php echo implode('<br>', array_map('e',$errors)); ?></div>
+    <div class="alert alert-danger border-0 shadow-sm">
+      <?php echo implode('<br>', $errors); ?>
+    </div>
   <?php endif; ?>
 
   <?php if ($sportId>0 && $sportDetail): ?>
-    <!-- โหมดเลือก/แก้ไขผู้เล่นของกีฬาหนึ่ง -->
-    <div class="mb-3 d-flex justify-content-between align-items-center">
-      <a href="<?php echo BASE_URL; ?>/staff/register.php" class="btn btn-sm btn-outline-secondary">&larr; กลับรายการกีฬา</a>
-      <div class="small text-muted">
-        ลงแล้ว (สี<?php echo e($staffColor); ?>): <?php echo count($prefill); ?>/<?php echo (int)$sportDetail['team_size']; ?> คน
-      </div>
+    <!-- โหมดเลือก/แก้ไขผู้เล่น -->
+    <div class="mb-3">
+      <a href="<?php echo BASE_URL; ?>/staff/register.php" class="btn btn-outline-secondary">
+        ← กลับรายการกีฬา
+      </a>
+      <span class="ms-3 text-muted">
+        ลงแล้ว (สี<?php echo e($staffColor); ?>): 
+        <strong style="color: <?php echo $currentTheme['hex']; ?>;">
+          <?php echo count($prefill); ?>/<?php echo (int)$sportDetail['team_size']; ?>
+        </strong> คน
+      </span>
     </div>
 
-    <div class="card border-0 shadow-sm rounded-4">
-      <div class="card-body">
-        <h5 class="card-title mb-2">ลงทะเบียนกีฬา: <?php echo e($sportDetail['name']); ?></h5>
-        <div class="text-muted mb-3">
-          เพศ: <?php echo e($sportDetail['gender']); ?>
-          • รูปแบบ: <?php echo e($sportDetail['participant_type']); ?>
-          • จำนวนต่อสี: <strong><?php echo (int)$sportDetail['team_size']; ?></strong>
+    <div class="card form-card shadow-sm">
+      <div class="card-body p-4">
+        <h5 class="mb-1">🏅 <?php echo e($sportDetail['name']); ?></h5>
+        <div class="d-flex flex-wrap gap-3 mb-4 text-muted">
+          <span>👫 เพศ: <strong><?php echo e($sportDetail['gender']); ?></strong></span>
+          <span>🎯 รูปแบบ: <strong><?php echo e($sportDetail['participant_type']); ?></strong></span>
+          <span>👥 จำนวนต่อสี: <strong><?php echo (int)$sportDetail['team_size']; ?></strong></span>
           <?php if (!empty($sportDetail['grade_levels'])): ?>
-            • ชั้นที่เปิด: <?php echo e($sportDetail['grade_levels']); ?>
+            <span>🎓 ชั้นที่เปิด: <strong><?php echo e($sportDetail['grade_levels']); ?></strong></span>
           <?php endif; ?>
         </div>
 
@@ -323,11 +418,11 @@ include __DIR__ . '/navbar.php';
           <input type="hidden" name="action" value="save_lineup">
           <input type="hidden" name="sport_id" value="<?php echo (int)$sportId; ?>">
 
-        <datalist id="students_datalist">
-          <?php foreach($studentMap as $lbl => $id): ?>
-            <option value="<?php echo e($lbl); ?>"></option>
-          <?php endforeach; ?>
-        </datalist>
+          <datalist id="students_datalist">
+            <?php foreach($studentMap as $lbl => $id): ?>
+              <option value="<?php echo e($lbl); ?>"></option>
+            <?php endforeach; ?>
+          </datalist>
 
           <div class="row g-3">
             <?php
@@ -340,24 +435,35 @@ include __DIR__ . '/navbar.php';
                 $prefillId = $val && isset($studentMap[$val]) ? $studentMap[$val] : 0;
             ?>
               <div class="col-md-6">
-                <label class="form-label">ผู้เล่นที่ <?php echo $i; ?></label>
-                <input type="text" class="form-control student-input" list="students_datalist" placeholder="พิมพ์ค้นหา รหัส/ชื่อ..." autocomplete="off" value="<?php echo e($val); ?>" <?php echo !$registrationOpen?'disabled':''; ?>>
+                <label class="form-label fw-semibold">
+                  👤 ผู้เล่นที่ <?php echo $i; ?>
+                </label>
+                <input type="text" 
+                       class="form-control player-input student-input" 
+                       list="students_datalist" 
+                       placeholder="🔍 พิมพ์ค้นหา รหัส/ชื่อ..." 
+                       autocomplete="off" 
+                       value="<?php echo e($val); ?>" 
+                       <?php echo !$registrationOpen?'disabled':''; ?>>
                 <input type="hidden" name="student_id_<?php echo $i; ?>" class="student-id-hidden" value="<?php echo (int)$prefillId; ?>">
-                <div class="form-text">ปล่อยว่าง = ไม่ใช้ช่องนี้</div>
+                <div class="form-text">💡 ปล่อยว่าง = ไม่ใช้ช่องนี้</div>
               </div>
             <?php endfor; ?>
           </div>
 
-          <div class="mt-3 d-flex gap-2">
-            <a class="btn btn-light" href="<?php echo BASE_URL; ?>/staff/register.php">ย้อนกลับ</a>
-            <button class="btn btn-primary" <?php echo !$registrationOpen?'disabled':''; ?>>บันทึกการลงทะเบียน (แทนที่ชุดเดิม)</button>
+          <div class="mt-4 d-flex gap-2">
+            <a class="btn btn-light" href="<?php echo BASE_URL; ?>/staff/register.php">← ย้อนกลับ</a>
+            <button class="btn text-white" 
+                    style="background: <?php echo $currentTheme['hex']; ?>;"
+                    <?php echo !$registrationOpen?'disabled':''; ?>>
+              ✅ บันทึกการลงทะเบียน
+            </button>
           </div>
         </form>
       </div>
     </div>
 
     <script>
-      // ป้องกัน submit เมื่อปิดลงทะเบียน
       const regOpen = <?php echo $registrationOpen ? 'true':'false'; ?>;
       if (regOpen) {
         const mapLabelToId = <?php echo json_encode($studentMap, JSON_UNESCAPED_UNICODE); ?>;
@@ -370,8 +476,8 @@ include __DIR__ . '/navbar.php';
             const hid = inputs[i].parentElement.querySelector('.student-id-hidden');
             if (label === '') { hid.value = ''; continue; }
             const id = mapLabelToId[label] || 0;
-            if (!id) { ev.preventDefault(); alert('กรุณาเลือกจากรายการ หรือปล่อยว่าง'); return; }
-            if (used.has(id)) { ev.preventDefault(); alert('มีชื่อผู้เล่นซ้ำกันในฟอร์ม'); return; }
+            if (!id) { ev.preventDefault(); alert('❌ กรุณาเลือกจากรายการ หรือปล่อยว่าง'); return; }
+            if (used.has(id)) { ev.preventDefault(); alert('❌ มีชื่อผู้เล่นซ้ำกันในฟอร์ม'); return; }
             used.add(id);
             hid.value = id;
           }
@@ -381,14 +487,17 @@ include __DIR__ . '/navbar.php';
 
   <?php else: ?>
     <!-- โหมดตารางรายการกีฬา -->
-    <div class="card border-0 shadow-sm rounded-4">
+    <div class="card filter-card shadow-sm mb-4">
       <div class="card-body">
-        <div class="d-flex flex-wrap justify-content-between align-items-end gap-2 mb-3">
-          <h5 class="card-title mb-0">ลงทะเบียนกีฬา (สี<?php echo e($staffColor); ?>)</h5>
-          <form class="row g-2 align-items-end" method="get" action="<?php echo BASE_URL; ?>/staff/register.php">
+        <div class="d-flex flex-wrap justify-content-between align-items-end gap-3">
+          <div>
+            <h5 class="mb-1">📋 รายการกีฬา</h5>
+            <p class="text-muted small mb-0">เลือกกีฬาเพื่อลงทะเบียนนักกีฬา</p>
+          </div>
+          <form class="row g-2 align-items-end" method="get" action="<?php echo BASE_URL; ?>/staff/register.php" id="filterForm">
             <div class="col-auto">
-              <label class="form-label">ประเภทกีฬา</label>
-              <select class="form-select" name="category_id">
+              <label class="form-label small text-muted mb-1">🏅 ประเภทกีฬา</label>
+              <select class="form-select" name="category_id" style="border-color: <?php echo $currentTheme['hex']; ?>66;" onchange="this.form.submit()">
                 <option value="0">ทั้งหมด</option>
                 <?php foreach($categories as $c): ?>
                   <option value="<?php echo (int)$c['id']; ?>" <?php echo $categoryFilter===(int)$c['id']?'selected':''; ?>>
@@ -397,64 +506,71 @@ include __DIR__ . '/navbar.php';
                 <?php endforeach; ?>
               </select>
             </div>
-            <div class="col-auto">
-              <button class="btn btn-primary">กรอง</button>
-            </div>
           </form>
         </div>
-
-        <div class="table-responsive">
-          <table class="table align-middle">
-            <thead>
-              <tr>
-                <th>กีฬา</th>
-                <th>ประเภท</th>
-                <th>เพศ</th>
-                <th>รูปแบบ</th>
-                <th>ชั้นที่เปิด</th>
-                <th class="text-center">รับ</th>
-                <th class="text-center">ลงแล้ว</th>
-                <th class="text-center">ว่าง</th>
-                <th>จัดการ</th>
-              </tr>
-            </thead>
-            <tbody>
-              <?php if (!$sports): ?>
-                <tr><td colspan="9" class="text-muted">ยังไม่มีกีฬาที่เปิดในปีนี้</td></tr>
-              <?php else: foreach($sports as $sp):
-                $reg = (int)$sp['reg_count'];
-                $cap = (int)$sp['team_size'];
-                $left = max(0, $cap - $reg);
-              ?>
-                <tr>
-                  <td class="fw-semibold"><?php echo e($sp['name']); ?></td>
-                  <td><?php echo e($sp['category_name']); ?></td>
-                  <td><?php echo e($sp['gender']); ?></td>
-                  <td><?php echo e($sp['participant_type']); ?></td>
-                  <td><?php echo e($sp['grade_levels'] ?: '-'); ?></td>
-                  <td class="text-center"><?php echo $cap; ?></td>
-                  <td class="text-center"><?php echo $reg; ?></td>
-                  <td class="text-center">
-                    <span class="badge <?php echo $left>0?'bg-success':'bg-secondary'; ?>"><?php echo $left; ?></span>
-                  </td>
-                  <td class="d-flex gap-2">
-                    <a class="btn btn-sm btn-outline-primary <?php echo !$registrationOpen?'disabled':''; ?>"
-                       <?php if ($registrationOpen): ?>
-                         href="<?php echo BASE_URL; ?>/staff/register.php?sport_id=<?php echo (int)$sp['id']; ?>"
-                       <?php else: ?>
-                         href="javascript:void(0)" title="ปิดรับลงทะเบียน"
-                       <?php endif; ?>>
-                       <?php echo $reg>0 ? 'แก้ไข' : 'ลงทะเบียน'; ?>
-                    </a>
-                  </td>
-                </tr>
-              <?php endforeach; endif; ?>
-            </tbody>
-          </table>
-        </div>
-
       </div>
+    </div>
+
+    <div class="table-responsive">
+      <?php if (!$sports): ?>
+        <div class="text-center py-5">
+          <div style="font-size: 3rem; margin-bottom: 1rem;">🔍</div>
+          <p class="text-muted">ยังไม่มีกีฬาที่เปิดในปีนี้</p>
+        </div>
+      <?php else: 
+        foreach($sports as $sp):
+          $reg = (int)$sp['reg_count'];
+          $cap = (int)$sp['team_size'];
+          $left = max(0, $cap - $reg);
+          $progress = $cap > 0 ? ($reg / $cap) * 100 : 0;
+      ?>
+        <div class="card sport-card shadow-sm mb-3">
+          <div class="card-body">
+            <div class="row align-items-center">
+              <div class="col-md-6">
+                <h6 class="mb-1 fw-bold"><?php echo e($sp['name']); ?></h6>
+                <div class="d-flex flex-wrap gap-2 text-muted small">
+                  <span>📂 <?php echo e($sp['category_name']); ?></span>
+                  <span>👫 <?php echo e($sp['gender']); ?></span>
+                  <span>🎯 <?php echo e($sp['participant_type']); ?></span>
+                  <?php if ($sp['grade_levels']): ?>
+                    <span>🎓 <?php echo e($sp['grade_levels']); ?></span>
+                  <?php endif; ?>
+                </div>
+              </div>
+              <div class="col-md-4">
+                <div class="d-flex align-items-center gap-2">
+                  <div class="flex-grow-1">
+                    <div class="progress" style="height: 1.5rem; border-radius: 1rem;">
+                      <div class="progress-bar" 
+                           style="width: <?php echo $progress; ?>%; background: <?php echo $currentTheme['hex']; ?>;"
+                           role="progressbar">
+                        <?php echo $reg; ?>/<?php echo $cap; ?>
+                      </div>
+                    </div>
+                  </div>
+                  <span class="status-badge <?php echo $left>0?'bg-success':'bg-secondary'; ?> text-white">
+                    <?php echo $left>0 ? "เหลือ {$left}" : "เต็ม"; ?>
+                  </span>
+                </div>
+              </div>
+              <div class="col-md-2 text-end">
+                <a class="btn btn-sm text-white <?php echo !$registrationOpen?'disabled':''; ?>"
+                   style="background: <?php echo $currentTheme['hex']; ?>;"
+                   <?php if ($registrationOpen): ?>
+                     href="<?php echo BASE_URL; ?>/staff/register.php?sport_id=<?php echo (int)$sp['id']; ?>"
+                   <?php else: ?>
+                     href="javascript:void(0)" title="ปิดรับลงทะเบียน"
+                   <?php endif; ?>>
+                   <?php echo $reg>0 ? '✏️ แก้ไข' : '✍️ ลงทะเบียน'; ?>
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      <?php endforeach; endif; ?>
     </div>
   <?php endif; ?>
 </main>
+
 <?php include __DIR__ . '/../../includes/footer.php'; ?>

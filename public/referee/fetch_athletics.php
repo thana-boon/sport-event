@@ -66,17 +66,23 @@ try {
   }
 
   if ($isRelay) {
-    // For relay lanes: show 4 members per color regardless of assignment registration
-    $relay4 = $pdo->prepare("SELECT CONCAT(s.first_name,' ',s.last_name) AS n
-                             FROM registrations rg
-                             JOIN students s ON s.id = rg.student_id
-                             WHERE rg.year_id=? AND rg.sport_id=? AND rg.color=?
-                             ORDER BY rg.id ASC LIMIT 4");
+    // For relay lanes: show all members per color (ไม่จำกัด 4 คน)
+    $limit = $team_size > 0 ? $team_size : 100; // ใช้ team_size จาก sports หรือ 100 (unlimited)
+    $limitSafe = (int)$limit; // แปลงเป็น integer เพื่อป้องกัน SQL injection
+    $relayMembers = $pdo->prepare("SELECT CONCAT(s.first_name,' ',s.last_name) AS n
+                                   FROM registrations rg
+                                   JOIN students s ON s.id = rg.student_id
+                                   WHERE rg.year_id=? AND rg.sport_id=? AND rg.color=?
+                                   ORDER BY rg.id ASC LIMIT {$limitSafe}");
     foreach ($lanes as &$L) {
       if ($L['color']) {
-        $relay4->execute([$year_id, $sport_id, $L['color']]);
-        $names = array_column($relay4->fetchAll(PDO::FETCH_ASSOC), 'n');
-        if ($names) $L['display_name'] = implode('<br>', $names);
+        $relayMembers->execute([$year_id, $sport_id, $L['color']]);
+        $names = array_column($relayMembers->fetchAll(PDO::FETCH_ASSOC), 'n');
+        if ($names) {
+          // ทำความสะอาด HTML tags และใช้ line break แทน <br>
+          $cleanNames = array_map(fn($n) => str_replace(['<br>', '<br/>', '<br />'], ' ', strip_tags($n)), $names);
+          $L['display_name'] = implode(", ", $cleanNames); // ใช้ ", " (comma + space) แยกชื่อ
+        }
       }
     } unset($L);
   } else {
@@ -104,13 +110,14 @@ try {
 
   // Load prior times/ranks
   try {
-    $tr = $pdo->prepare("SELECT lane_no, time_str, rank FROM track_results WHERE heat_id=?");
+    $tr = $pdo->prepare("SELECT lane_no, time_str, rank, is_record FROM track_results WHERE heat_id=?");
     $tr->execute([$heat['id']]);
     while ($rr = $tr->fetch(PDO::FETCH_ASSOC)) {
       $i = (int)$rr['lane_no'];
       if (!isset($lanes[$i])) continue;
       $lanes[$i]['time_sec'] = $rr['time_str'];
       $lanes[$i]['rank'] = isset($rr['rank']) ? (int)$rr['rank'] : null;
+      $lanes[$i]['is_record'] = (int)($rr['is_record'] ?? 0);
     }
   } catch (Throwable $e) {}
 

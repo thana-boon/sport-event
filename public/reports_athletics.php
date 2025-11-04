@@ -17,16 +17,23 @@ function e($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 
 // ---------------------- utils ----------------------
 function prev_year_id(PDO $pdo, int $currentId): ?int {
-  // เอาปีที่ id < ปัจจุบัน และใกล้ที่สุด
-  $q = $pdo->prepare("SELECT MAX(id) FROM academic_years WHERE id < :c");
+  // เอาปีที่ year_be < ปัจจุบัน และใกล้ที่สุด
+  $q = $pdo->prepare("
+    SELECT ay1.id
+    FROM academic_years ay1
+    JOIN academic_years ay2 ON ay2.id = :c
+    WHERE ay1.year_be < ay2.year_be
+    ORDER BY ay1.year_be DESC
+    LIMIT 1
+  ");
   $q->execute([':c'=>$currentId]);
   $id = $q->fetchColumn();
   return $id ? (int)$id : null;
 }
 
 function sport_key(array $r): string {
-  // ใช้จับคู่ชนิดกีฬา: ชื่อ+เพศ+ประเภท+ระดับชั้น (หมวดกรีฑาอยู่แล้วจาก SQL)
-  return trim(($r['name']??'')).'|'.trim(($r['gender']??'')).'|'.trim(($r['participant_type']??'')).'|'.trim(($r['grade_levels']??''));
+  // ใช้จับคู่ชนิดกีฬา: ชื่อ+เพศ+ประเภท (ไม่รวม grade_levels เพราะอาจแตกต่างกัน)
+  return trim(($r['name']??'')).'|'.trim(($r['gender']??'')).'|'.trim(($r['participant_type']??''));
 }
 
 function resolve_student_id(PDO $pdo, int $yearId, string $typedName): ?int {
@@ -78,20 +85,38 @@ if (isset($_GET['import']) && $_GET['import'] === 'prev') {
     JOIN sports s ON s.id = ae.sport_id
     LEFT JOIN students st ON st.id = ae.best_student_id
     JOIN sport_categories c ON c.id=s.category_id
-    WHERE ae.year_id=:p AND c.name='กรีฑา'
+    WHERE s.year_id=:p AND c.name='กรีฑา'
     ORDER BY ae.id
   ");
   $prev->execute([':p'=>$prevId]);
   $rows = $prev->fetchAll(PDO::FETCH_ASSOC);
+
+  // Debug: แสดงจำนวนกีฬากรีฑาที่มีในระบบ vs รายการที่สร้างแล้ว
+  $debugMsg = "ปีปัจจุบัน: กีฬากรีฑา " . count($curMap) . " รายการ | ปีที่แล้ว: รายการที่สร้างแล้ว " . count($rows) . " รายการ";
+  
+  // ถ้าไม่พบรายการปีที่แล้ว → หยุดทันที
+  if (count($rows) === 0) {
+    $_SESSION['flash'] = ['type'=>'warning','msg'=>"ไม่มีรายการกรีฑาในปีที่แล้วให้คัดลอก<br><small>$debugMsg</small>"];
+    header('Location: ' . BASE_URL . '/reports_athletics.php'); exit;
+  }
 
   $ins = $pdo->prepare("
     INSERT INTO athletics_events (year_id, event_code, sport_id, best_student_id, best_time, best_year_be, notes)
     VALUES (:y,:code,:sport_id,NULL,:best_time,:best_year,:notes)
   ");
   $copied=0; $skipped=0;
+  $skippedReasons = []; // เก็บเหตุผลที่ข้าม (debug)
+
   foreach($rows as $r){
     $key = sport_key($r);
-    if (!isset($curMap[$key])) { $skipped++; continue; }
+    if (!isset($curMap[$key])) {
+      $skipped++;
+      // เก็บตัวอย่างที่ข้าม (สูงสุด 5 รายการ)
+      if (count($skippedReasons) < 5) {
+        $skippedReasons[] = "ไม่พบกีฬา: {$r['name']} • {$r['gender']} • {$r['participant_type']}";
+      }
+      continue;
+    }
     $sportIdNew = $curMap[$key];
 
     $notes = $r['notes'] ?? '';
@@ -99,17 +124,35 @@ if (isset($_GET['import']) && $_GET['import'] === 'prev') {
       $n = trim($r['best_student_name']);
       if ($n!=='') $notes = ($notes? $notes.'; ' : '').$n.' (จากปีก่อน)';
     }
-    $ins->execute([
-      ':y'=>$yearId,
-      ':code'=>$r['event_code'],
-      ':sport_id'=>$sportIdNew,
-      ':best_time'=>$r['best_time'],
-      ':best_year'=>$r['best_year_be'],
-      ':notes'=>$notes
-    ]);
-    $copied++;
+
+    try {
+      $ins->execute([
+        ':y'=>$yearId,
+        ':code'=>$r['event_code'] ?? '', // ป้องกัน NULL
+        ':sport_id'=>$sportIdNew,
+        ':best_time'=>$r['best_time'],
+        ':best_year'=>$r['best_year_be'],
+        ':notes'=>$notes
+      ]);
+      $copied++;
+    } catch (PDOException $e) {
+      // ถ้า duplicate (รหัสซ้ำ) → ข้าม
+      if ($e->getCode() == 23000 && strpos($e->getMessage(), '1062') !== false) {
+        $skipped++;
+        if (count($skippedReasons) < 5) {
+          $skippedReasons[] = "รหัสซ้ำ: {$r['event_code']} (กีฬา: {$r['name']})";
+        }
+      } else {
+        throw $e; // error อื่น → throw ต่อ
+      }
+    }
   }
-  $_SESSION['flash'] = ['type'=>'success','msg'=>"คัดลอกจากปีก่อนเรียบร้อย: เพิ่ม $copied รายการ, ข้าม $skipped"];
+  $msg = "คัดลอกจากปีก่อนเรียบร้อย: เพิ่ม $copied รายการ, ข้าม $skipped<br><small>$debugMsg</small>";
+  if (!empty($skippedReasons)) {
+    $msg .= "<br><small>ตัวอย่างที่ข้าม: " . implode('; ', $skippedReasons) . "</small>";
+  }
+  $_SESSION['flash'] = ['type'=>'success','msg'=>"คัดลอกจากปีก่อนเรียบร้อย: เพิ่ม $copied รายการ, ข้าม $skipped\n$debugMsg" . (!empty($skippedReasons) ? "\nตัวอย่างที่ข้าม: " . implode('; ', $skippedReasons) : '')];
+
   header('Location: ' . BASE_URL . '/reports_athletics.php'); exit;
 }
 
@@ -201,6 +244,22 @@ $stmEv=$pdo->prepare($sqlEvents);
 $stmEv->execute([':y'=>$yearId]);
 $events=$stmEv->fetchAll(PDO::FETCH_ASSOC);
 
+// ---------------------- utils ----------------------
+function formatTime($seconds) {
+  if ($seconds === null || $seconds === '') return '—';
+  $sec = (float)$seconds;
+  
+  if ($sec < 60) {
+    // น้อยกว่า 60 วินาที → แสดงเป็นวินาที
+    return number_format($sec, 2, '.', '') . ' วินาที';
+  } else {
+    // 60 วินาทีขึ้นไป → แปลงเป็นนาที:วินาที
+    $minutes = floor($sec / 60);
+    $remainSec = $sec - ($minutes * 60);
+    return $minutes . ':' . number_format($remainSec, 2, '.', '') . ' นาที';
+  }
+}
+
 // ---------------------- view helpers ----------------------
 function renderBestName($r){
   if (!empty($r['best_student_id']) && !empty($r['best_student_name'])) return e($r['best_student_name']);
@@ -221,14 +280,15 @@ include __DIR__ . '/../includes/navbar.php';
 ?>
 <main class="container py-4">
   <?php if(!empty($_SESSION['flash'])): ?>
-    <div class="alert alert-<?=e($_SESSION['flash']['type'])?>"><?=e($_SESSION['flash']['msg'])?></div>
+    <div class="alert alert-<?=e($_SESSION['flash']['type'])?>" style="white-space: pre-line;"><?=e($_SESSION['flash']['msg'])?></div>
     <?php $_SESSION['flash']=null; endif; ?>
 
   <div class="d-flex align-items-center justify-content-between mb-3">
-    <h5 class="mb-0">กำหนดรหัส “รายการกรีฑา” • <?=e($yearName)?> ปีการศึกษา</h5>
+    <h5 class="mb-0">กำหนดรหัส "รายการกรีฑา" • <?=e($yearName)?> ปีการศึกษา</h5>
     <div class="d-flex gap-2">
       <a class="btn btn-outline-secondary" href="?import=prev" onclick="return confirm('คัดลอกจากปีก่อนเข้าปีนี้?');">คัดลอกจากปีก่อน</a>
-      <a class="btn btn-success" href="<?=BASE_URL?>/reports_athletics_export.php?download=1">Export ทั้งหมด</a>
+      <a class="btn btn-success" href="<?=BASE_URL?>/reports_athletics_export.php?download=1">📖 สูจิบัตร PDF</a>
+      <a class="btn btn-primary" href="<?=BASE_URL?>/reports_athletics_schedule.php?download=1">📋 ตารางการแข่งขัน</a>
     </div>
   </div>
 
@@ -323,9 +383,9 @@ include __DIR__ . '/../includes/navbar.php';
                   <?php
                     $t = trim((string)($r['best_time'] ?? ''));
                     $y = trim((string)($r['best_year_be'] ?? ''));
-                    if ($t==='' && $y==='') echo '—';
-                    else if ($t!=='' && $y!=='') echo e($t).' ('.e($y).')';
-                    else echo e($t.$y);
+                    $timeStr = formatTime($t);
+                    if ($y !== '') echo $timeStr . ' <span class="text-muted">(' . e($y) . ')</span>';
+                    else echo $timeStr;
                   ?>
                 </td>
               </tr>

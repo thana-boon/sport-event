@@ -68,7 +68,7 @@ if (!$hideNav):
 <nav class="navbar navbar-expand-lg navbar-dark bg-primary shadow-sm">
   <div class="container">
     <a class="navbar-brand fw-semibold" href="<?php echo BASE_URL; ?>/index.php">
-      <?php echo e($brandText); ?>
+      🏆 <?php echo e($brandText); ?>
     </a>
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarMain" aria-controls="navbarMain" aria-expanded="false" aria-label="Toggle navigation">
@@ -81,62 +81,62 @@ if (!$hideNav):
         <?php if (!empty($_SESSION['admin'])): ?>
           <!-- เมนูสำหรับผู้ดูแลระบบ -->
           <li class="nav-item">
-            <a class="nav-link <?php echo nav_active('index.php',$current); ?>" href="<?php echo BASE_URL; ?>/index.php">แดชบอร์ด</a>
+            <a class="nav-link <?php echo nav_active('index.php',$current); ?>" href="<?php echo BASE_URL; ?>/index.php">📊 แดชบอร์ด</a>
           </li>
 
           <!-- กลุ่ม: จัดการข้อมูล -->
           <li class="nav-item dropdown">
             <a class="nav-link dropdown-toggle <?php echo in_array($current, ['years.php','students.php','categories.php']) ? 'active' : ''; ?>" href="#" id="dataDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-              จัดการข้อมูล
+              📂 จัดการข้อมูล
             </a>
             <ul class="dropdown-menu" aria-labelledby="dataDropdown">
-              <li><a class="dropdown-item <?php echo nav_active('years.php',$current); ?>" href="<?php echo BASE_URL; ?>/years.php">กำหนดปีการศึกษา</a></li>
-              <li><a class="dropdown-item <?php echo nav_active('students.php',$current); ?>" href="<?php echo BASE_URL; ?>/students.php">จัดการนักเรียน</a></li>
-              <li><a class="dropdown-item <?php echo nav_active('categories.php',$current); ?>" href="<?php echo BASE_URL; ?>/categories.php">กำหนดประเภทกีฬา</a></li>
+              <li><a class="dropdown-item <?php echo nav_active('years.php',$current); ?>" href="<?php echo BASE_URL; ?>/years.php">📅 กำหนดปีการศึกษา</a></li>
+              <li><a class="dropdown-item <?php echo nav_active('students.php',$current); ?>" href="<?php echo BASE_URL; ?>/students.php">👨‍🎓 จัดการนักเรียน</a></li>
+              <li><a class="dropdown-item <?php echo nav_active('categories.php',$current); ?>" href="<?php echo BASE_URL; ?>/categories.php">🏅 กำหนดประเภทกีฬา</a></li>
             </ul>
           </li>
 
           <!-- กลุ่ม: จัดการกีฬา -->
           <li class="nav-item dropdown">
             <a class="nav-link dropdown-toggle <?php echo in_array($current, ['sports.php','matches.php','athletics.php']) ? 'active' : ''; ?>" href="#" id="sportDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-              จัดการกีฬา
+              ⚽ จัดการกีฬา
             </a>
             <ul class="dropdown-menu" aria-labelledby="sportDropdown">
-              <li><a class="dropdown-item <?php echo nav_active('sports.php',$current); ?>" href="<?php echo BASE_URL; ?>/sports.php">กำหนดรายการกีฬา</a></li>
-              <li><a class="dropdown-item <?php echo nav_active('matches.php',$current); ?>" href="<?php echo BASE_URL; ?>/matches.php">จับคู่การแข่งขัน</a></li>
-              <li><a class="dropdown-item <?php echo nav_active('athletics.php',$current); ?>" href="<?php echo BASE_URL; ?>/athletics.php">จัดลู่กรีฑา</a></li>
-              <li><a class="dropdown-item <?php echo nav_active('users.php',$current); ?>" href="<?php echo BASE_URL; ?>/users.php">จัดการผู้ใช้</a></li>
+              <li><a class="dropdown-item <?php echo nav_active('sports.php',$current); ?>" href="<?php echo BASE_URL; ?>/sports.php">🎯 กำหนดรายการกีฬา</a></li>
+              <li><a class="dropdown-item <?php echo nav_active('matches.php',$current); ?>" href="<?php echo BASE_URL; ?>/matches.php">🤝 จับคู่การแข่งขัน</a></li>
+              <li><a class="dropdown-item <?php echo nav_active('athletics.php',$current); ?>" href="<?php echo BASE_URL; ?>/athletics.php">🏃 จัดลู่กรีฑา</a></li>
+              <li><a class="dropdown-item <?php echo nav_active('users.php',$current); ?>" href="<?php echo BASE_URL; ?>/users.php">👥 จัดการผู้ใช้</a></li>
             </ul>
           </li>
 
           <!-- กลุ่ม: การลงทะบียน -->
           <li class="nav-item dropdown">
-            <a class="nav-link dropdown-toggle <?php echo in_array($current, ['sports.php','matches.php','athletics.php']) ? 'active' : ''; ?>" href="#" id="sportDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-              GodMode
+            <a class="nav-link dropdown-toggle <?php echo in_array($current, ['regis.php','referee.php']) ? 'active' : ''; ?>" href="#" id="godmodeDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+              ⚡ GodMode
             </a>
-            <ul class="dropdown-menu" aria-labelledby="sportDropdown">
-              <li><a class="dropdown-item <?php echo nav_active('regis.php',$current); ?>" href="<?php echo BASE_URL; ?>/regis.php">จัดการลงทะเบียนนักกีฬา</a></li>
-              <li><a class="dropdown-item <?php echo nav_active('referee.php',$current); ?>" href="<?php echo BASE_URL; ?>/referee.php">บันทึกผลกการแข่งขัน</a></li>
+            <ul class="dropdown-menu" aria-labelledby="godmodeDropdown">
+              <li><a class="dropdown-item <?php echo nav_active('regis.php',$current); ?>" href="<?php echo BASE_URL; ?>/regis.php">✍️ จัดการลงทะเบียนนักกีฬา</a></li>
+              <li><a class="dropdown-item <?php echo nav_active('referee.php',$current); ?>" href="<?php echo BASE_URL; ?>/referee.php">🎖️ บันทึกผลการแข่งขัน</a></li>
             </ul>
           </li>
 
           <!-- เมนูรายงานแบบ dropdown -->
           <li class="nav-item dropdown">
-            <a class="nav-link dropdown-toggle <?php echo in_array($current, ['reports.php','reports_booklet.php']) ? 'active' : ''; ?>" href="#" id="reportDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-              รายงาน
+            <a class="nav-link dropdown-toggle <?php echo in_array($current, ['reports.php','reports_booklet.php','reports_athletics.php']) ? 'active' : ''; ?>" href="#" id="reportDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+              📋 รายงาน
             </a>
             <ul class="dropdown-menu" aria-labelledby="reportDropdown">
               <li>
                 <a class="dropdown-item<?php echo $current === 'reports.php' ? ' active' : ''; ?>" href="<?php echo BASE_URL; ?>/reports.php">
-                  ใบเช็คชื่อนักกีฬา
+                  📄 รายงานและเอกสาร
                 </a>
               </li>
               <li>
                 <a class="dropdown-item<?php echo $current === 'reports_booklet.php' ? ' active' : ''; ?>" href="<?php echo BASE_URL; ?>/reports_booklet.php">
-                  สูจิบัตรรายชื่อนักกีฬา (กีฬา)
+                  📖 สูจิบัตรนักกีฬา (กีฬา)
                 </a>
                 <a class="dropdown-item<?php echo $current === 'reports_athletics.php' ? ' active' : ''; ?>" href="<?php echo BASE_URL; ?>/reports_athletics.php">
-                  สูจิบัตรรายชื่อนักกีฬา (กรีฑา)
+                  📗 สูจิบัตรนักกีฬา (กรีฑา)
                 </a>
               </li>
             </ul>
@@ -145,19 +145,19 @@ if (!$hideNav):
           <!-- ขวาสุด: ชื่อผู้ใช้ / ออกจากระบบ -->
           <li class="nav-item dropdown">
             <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-              <?php echo e($displayName ?? 'ผู้ดูแลระบบ'); ?>
+              👤 <?php echo e($displayName ?? 'ผู้ดูแลระบบ'); ?>
             </a>
             <ul class="dropdown-menu dropdown-menu-end">
               <li><span class="dropdown-item-text small text-muted"><?php echo '@'.e($_SESSION['admin']['username'] ?? 'admin'); ?></span></li>
               <li><hr class="dropdown-divider"></li>
-              <li><a class="dropdown-item" href="<?php echo BASE_URL; ?>/logout.php">ออกจากระบบ</a></li>
+              <li><a class="dropdown-item text-danger" href="<?php echo BASE_URL; ?>/logout.php">🚪 ออกจากระบบ</a></li>
             </ul>
           </li>
 
         <?php else: ?>
           <!-- ยังไม่ได้ล็อกอิน -->
           <li class="nav-item">
-            <a class="nav-link <?php echo nav_active('login.php',$current); ?>" href="<?php echo BASE_URL; ?>/login.php">เข้าสู่ระบบ</a>
+            <a class="nav-link <?php echo nav_active('login.php',$current); ?>" href="<?php echo BASE_URL; ?>/login.php">🔑 เข้าสู่ระบบ</a>
           </li>
         <?php endif; ?>
 

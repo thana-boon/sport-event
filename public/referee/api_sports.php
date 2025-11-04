@@ -12,11 +12,15 @@ try {
   $year_id = (int)$yr['id']; $year_be = (int)$yr['year_be'];
 
   // รายการกีฬาในปีนี้
-  $st = $pdo->prepare("SELECT s.id, s.name, s.category_id, c.name AS category_name, s.grade_levels
+  $st = $pdo->prepare("SELECT s.id, s.name, s.category_id, c.name AS category_name, s.grade_levels, 
+                              ae.event_code,
+                              CASE WHEN ae.event_code IS NOT NULL THEN CAST(ae.event_code AS UNSIGNED) ELSE 9999 END AS sort_order
                        FROM sports s
                        JOIN sport_categories c ON c.id = s.category_id
+                       LEFT JOIN athletics_events ae ON ae.sport_id = s.id
                        WHERE s.is_active = 1 AND s.year_id = :y
-                       ORDER BY c.name, s.name");
+                         AND (c.name NOT LIKE '%กรีฑ%' OR ae.event_code IS NOT NULL)
+                       ORDER BY c.name, sort_order, s.name");
   $st->execute([':y'=>$year_id]);
   $sports = $st->fetchAll(PDO::FETCH_ASSOC);
 
