@@ -42,6 +42,9 @@ if (!$yearId) {
 }
 $registrationOpen = registration_open_safe($pdo);
 
+// ตรวจสอบว่าเป็นโหมด "ดูอย่างเดียว" หรือไม่
+$viewMode = isset($_GET['view']) && $_GET['view'] === '1';
+
 // -------- โหลดประเภทกีฬา (ไว้ทำฟิลเตอร์) --------
 $catStmt = $pdo->prepare("
   SELECT sc.id, sc.name
@@ -61,6 +64,11 @@ $messages=[]; $warnings=[]; $errors=[];
 if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['action'] ?? '')==='save_lineup') {
   if (!$registrationOpen) {
     $errors[] = '⛔ ขณะนี้ปิดรับลงทะเบียน แก้ไขไม่ได้';
+    
+    // LOG: พยายามแก้ไขขณะปิดรับลงทะเบียน
+    log_activity('ATTEMPT_EDIT_CLOSED', 'registrations', null, 
+      'พยายามแก้ไขรายชื่อขณะระบบปิดรับลงทะเบียน | สี: ' . $staffColor);
+    
   } else {
     $sportId = (int)($_POST['sport_id'] ?? 0);
     if ($sportId <= 0) { $errors[]='❌ ไม่พบกีฬา'; }
@@ -97,7 +105,7 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['action'] ?? '')==='save_line
       if ($chosen) {
         $in = implode(',', array_fill(0,count($chosen),'?'));
         $params = array_merge([$yearId], $chosen);
-        $q = $pdo->prepare("SELECT id, first_name, last_name, class_level, color
+        $q = $pdo->prepare("SELECT id, first_name, last_name, class_level, color, student_code
                             FROM students WHERE year_id=? AND id IN ($in)");
         $q->execute($params);
         while($r=$q->fetch(PDO::FETCH_ASSOC)){ $students[(int)$r['id']]=$r; }
@@ -147,21 +155,66 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['action'] ?? '')==='save_line
       if (!$errors) {
         try{
           $pdo->beginTransaction();
+          
+          // ดึงข้อมูลเดิมก่อนลบ (เพื่อ log)
+          $oldRegStmt = $pdo->prepare("
+            SELECT s.first_name, s.last_name, s.student_code
+            FROM registrations r
+            JOIN students s ON s.id = r.student_id
+            WHERE r.year_id=? AND r.sport_id=? AND r.color=?
+          ");
+          $oldRegStmt->execute([$yearId, $sportId, $staffColor]);
+          $oldPlayers = $oldRegStmt->fetchAll(PDO::FETCH_ASSOC);
+          $oldPlayerNames = array_map(function($p) {
+            return $p['student_code'] . ' ' . $p['first_name'] . ' ' . $p['last_name'];
+          }, $oldPlayers);
+          
           // ลบชุดเดิมของสีนี้ในกีฬานี้ก่อน
           $del = $pdo->prepare("DELETE FROM registrations WHERE year_id=? AND sport_id=? AND color=?");
           $del->execute([$yearId,$sportId,$staffColor]);
 
+          // เก็บข้อมูลผู้เล่นใหม่
+          $newPlayerNames = [];
+          
           // แทรกชุดใหม่ (เท่าจำนวนที่เลือก)
           if ($chosen) {
             $ins = $pdo->prepare("INSERT INTO registrations (year_id,sport_id,student_id,color) VALUES (?,?,?,?)");
             foreach ($chosen as $sid) {
               $ins->execute([$yearId,$sportId,$sid,$staffColor]);
+              
+              // เก็บชื่อผู้เล่นใหม่
+              if (!empty($students[$sid])) {
+                $stu = $students[$sid];
+                $newPlayerNames[] = $stu['student_code'] . ' ' . $stu['first_name'] . ' ' . $stu['last_name'];
+              }
             }
           }
+          
           $pdo->commit();
+          
+          // LOG: บันทึกสำเร็จ
+          $actionType = count($oldPlayers) > 0 ? 'UPDATE' : 'CREATE';
+          $logDetails = sprintf(
+            "กีฬา: %s | สี: %s | ผู้เล่นเดิม: %d คน [%s] → ผู้เล่นใหม่: %d คน [%s]",
+            $sport['name'],
+            $staffColor,
+            count($oldPlayers),
+            count($oldPlayerNames) > 0 ? implode(', ', $oldPlayerNames) : '-',
+            count($chosen),
+            count($newPlayerNames) > 0 ? implode(', ', $newPlayerNames) : '-'
+          );
+          
+          log_activity($actionType, 'registrations', $sportId, $logDetails);
+          
           $messages[] = '✅ บันทึกสำเร็จ: อัปเดตรายชื่อทีมสี'.e($staffColor).' ในกีฬา '.e($sport['name']);
+          
         }catch(Throwable $e){
           $pdo->rollBack();
+          
+          // LOG: บันทึกไม่สำเร็จ
+          log_activity('ERROR', 'registrations', $sportId, 
+            'บันทึกไม่สำเร็จ: ' . $e->getMessage() . ' | กีฬา: ' . ($sport['name'] ?? 'unknown') . ' | สี: ' . $staffColor);
+          
           $errors[] = '❌ บันทึกไม่สำเร็จ: '.$e->getMessage();
         }
       }
@@ -169,7 +222,7 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['action'] ?? '')==='save_line
   }
 }
 
-// -------- เปิดโหมด “กีฬาเดียว” ถ้ามี sport_id --------
+// -------- เปิดโหมด "กีฬาเดียว" ถ้ามี sport_id --------
 $sportId = (int)($_GET['sport_id'] ?? 0);
 $sportDetail = null; $eligibleStudents = []; $teamSize = 0; $studentMap = [];
 $prefill = []; // รายชื่อที่ลงทะเบียนไว้แล้วของสีนี้
@@ -181,9 +234,6 @@ if ($sportId>0) {
     $teamSize = (int)$sportDetail['team_size'];
     $levels = parse_grade_levels($sportDetail['grade_levels']);
     $gender = $sportDetail['gender'];
-
-    // normalize class_level จาก students (ลบจุด) เพื่อเปรียบเทียบกับ grade_levels
-    // → ใช้ REPLACE(s.class_level, '.', '') ใน WHERE
 
     // รายชื่อที่ลงทะเบียนไว้แล้วของ "สีนี้"
     $qPrefill = $pdo->prepare("
@@ -203,70 +253,68 @@ if ($sportId>0) {
     $qPrefill->execute([$yearId,$sportId,$staffColor]);
     $prefill = $qPrefill->fetchAll(PDO::FETCH_ASSOC);
 
-    // เงื่อนไขเพศ
-    $genderCond = "1=1";
-    if ($gender==='ช') {
-      $genderCond = "(s.first_name LIKE 'เด็กชาย%' OR s.first_name LIKE 'นาย%')";
-    } elseif ($gender==='ญ') {
-      $genderCond = "(s.first_name LIKE 'เด็กหญิง%' OR s.first_name LIKE 'นางสาว%')";
-    }
-
-    // ดึง "นักเรียนที่เลือกได้" — ใช้ REPLACE(s.class_level, '.', '') เพื่อ normalize
-    // เปลี่ยนจาก ? เป็น named param :lv0, :lv1, ... เพื่อให้ตรงกับจำนวน bind
-    $levelPlaceholders = [];
-    if ($levels) {
-      foreach ($levels as $idx => $lv) {
-        $levelPlaceholders[] = ":lv{$idx}";
+    // ถ้าไม่ใช่ view mode ให้โหลดข้อมูลสำหรับแก้ไข
+    if (!$viewMode && $registrationOpen) {
+      // เงื่อนไขเพศ
+      $genderCond = "1=1";
+      if ($gender==='ช') {
+        $genderCond = "(s.first_name LIKE 'เด็กชาย%' OR s.first_name LIKE 'นาย%')";
+      } elseif ($gender==='ญ') {
+        $genderCond = "(s.first_name LIKE 'เด็กหญิง%' OR s.first_name LIKE 'นางสาว%')";
       }
-    }
 
-    $sql = "
-      SELECT s.id,
-             CONCAT(s.first_name,' ',s.last_name) AS fullname,
-             s.student_code,
-             s.class_level, s.class_room, s.number_in_room
-      FROM students s
-      WHERE s.year_id=:yid AND s.color=:col
-        AND $genderCond
-        ".($levels ? "AND REPLACE(s.class_level, '.', '') IN (" . implode(',', $levelPlaceholders). ")" : "")."
-      ORDER BY
-        CASE WHEN s.class_level LIKE 'ป%' THEN 1
-             WHEN s.class_level LIKE 'ม%' THEN 2
-             ELSE 3 END,
-        CAST(REPLACE(SUBSTRING(s.class_level, 2), '.', '') AS UNSIGNED),
-        s.class_room, s.number_in_room, s.first_name, s.last_name
-    ";
-    $bind = ['yid'=>$yearId, 'col'=>$staffColor];
-    if ($levels) {
-      foreach ($levels as $idx => $lv) {
-        $bind["lv{$idx}"] = $lv;
+      $levelPlaceholders = [];
+      if ($levels) {
+        foreach ($levels as $idx => $lv) {
+          $levelPlaceholders[] = ":lv{$idx}";
+        }
       }
-    }
 
-    $q = $pdo->prepare($sql);
-    $q->execute($bind);
-    $eligibleStudents = $q->fetchAll(PDO::FETCH_ASSOC);
-
-    // หา student_id ที่ลงทะเบียนแล้วในกีฬานี้ แต่เป็นสีอื่น (ให้ exclude)
-    $blockedStmt = $pdo->prepare("SELECT student_id FROM registrations WHERE year_id=? AND sport_id=? AND color<>?");
-    $blockedStmt->execute([$yearId, $sportId, $staffColor]);
-    $blockedIds = $blockedStmt->fetchAll(PDO::FETCH_COLUMN, 0);
-    $blockedMap = [];
-    foreach ($blockedIds as $bid) { $blockedMap[(int)$bid] = true; }
-
-    // รวม datalist = คนที่เลือกได้ทั้งหมด + คนที่เคยลงไว้แล้ว (แต่ตัดคนที่ลงด้วยสีอื่นออก)
-    // ให้คงรายการ prefill (สีของคุณ) ไว้เสมอ
-    $prefillIds = [];
-    foreach ($prefill as $row) { $prefillIds[] = (int)$row['id']; }
-
-    foreach (array_merge($prefill, $eligibleStudents) as $row) {
-      $sid = (int)$row['id'];
-      // ถ้าคนนี้ลงด้วยสีอื่นแล้ว และไม่ใช่คนที่อยู่ใน prefill (สีของคุณ) -> ข้าม
-      if (isset($blockedMap[$sid]) && !in_array($sid, $prefillIds, true)) {
-        continue;
+      $sql = "
+        SELECT s.id,
+               CONCAT(s.first_name,' ',s.last_name) AS fullname,
+               s.student_code,
+               s.class_level, s.class_room, s.number_in_room
+        FROM students s
+        WHERE s.year_id=:yid AND s.color=:col
+          AND $genderCond
+          ".($levels ? "AND REPLACE(s.class_level, '.', '') IN (" . implode(',', $levelPlaceholders). ")" : "")."
+        ORDER BY
+          CASE WHEN s.class_level LIKE 'ป%' THEN 1
+               WHEN s.class_level LIKE 'ม%' THEN 2
+               ELSE 3 END,
+          CAST(REPLACE(SUBSTRING(s.class_level, 2), '.', '') AS UNSIGNED),
+          s.class_room, s.number_in_room, s.first_name, s.last_name
+      ";
+      $bind = ['yid'=>$yearId, 'col'=>$staffColor];
+      if ($levels) {
+        foreach ($levels as $idx => $lv) {
+          $bind["lv{$idx}"] = $lv;
+        }
       }
-      $label = $row['student_code'].' '.$row['fullname'].' ('.$row['class_level'].'/'.$row['class_room'].' เลขที่ '.$row['number_in_room'].')';
-      $studentMap[$label] = $sid;
+
+      $q = $pdo->prepare($sql);
+      $q->execute($bind);
+      $eligibleStudents = $q->fetchAll(PDO::FETCH_ASSOC);
+
+      // หา student_id ที่ลงทะเบียนแล้วในกีฬานี้ แต่เป็นสีอื่น (ให้ exclude)
+      $blockedStmt = $pdo->prepare("SELECT student_id FROM registrations WHERE year_id=? AND sport_id=? AND color<>?");
+      $blockedStmt->execute([$yearId, $sportId, $staffColor]);
+      $blockedIds = $blockedStmt->fetchAll(PDO::FETCH_COLUMN, 0);
+      $blockedMap = [];
+      foreach ($blockedIds as $bid) { $blockedMap[(int)$bid] = true; }
+
+      $prefillIds = [];
+      foreach ($prefill as $row) { $prefillIds[] = (int)$row['id']; }
+
+      foreach (array_merge($prefill, $eligibleStudents) as $row) {
+        $sid = (int)$row['id'];
+        if (isset($blockedMap[$sid]) && !in_array($sid, $prefillIds, true)) {
+          continue;
+        }
+        $label = $row['student_code'].' '.$row['fullname'].' ('.$row['class_level'].'/'.$row['class_room'].' เลขที่ '.$row['number_in_room'].')';
+        $studentMap[$label] = $sid;
+      }
     }
   }
 }
@@ -349,6 +397,21 @@ include __DIR__ . '/navbar.php';
     border-radius: 1rem;
     border: 2px solid <?php echo $currentTheme['hex']; ?>33;
   }
+  .view-only-card {
+    background: #f8f9fa;
+    border-radius: 0.75rem;
+    padding: 1rem;
+    margin-bottom: 0.5rem;
+    border-left: 4px solid <?php echo $currentTheme['hex']; ?>;
+  }
+  .view-mode-badge {
+    background: <?php echo $currentTheme['hex']; ?>33;
+    color: <?php echo $currentTheme['hex']; ?>;
+    padding: 0.5rem 1rem;
+    border-radius: 1rem;
+    font-weight: 500;
+    display: inline-block;
+  }
 </style>
 
 <main class="container py-4">
@@ -356,19 +419,32 @@ include __DIR__ . '/navbar.php';
   <div class="page-header">
     <div class="d-flex align-items-center justify-content-between">
       <div>
-        <h3 class="mb-1">✍️ ลงทะเบียนกีฬา</h3>
-        <p class="mb-0 opacity-75">จัดการรายชื่อนักกีฬา สี<?php echo e($staffColor); ?></p>
+        <h3 class="mb-1">
+          <?php echo $viewMode ? '👁️ ดูรายชื่อนักกีฬา' : '✍️ ลงทะเบียนกีฬา'; ?>
+        </h3>
+        <p class="mb-0 opacity-75">
+          <?php echo $viewMode ? 'ดูรายชื่อนักกีฬาที่ลงทะเบียนแล้ว' : 'จัดการรายชื่อนักกีฬา'; ?> 
+          สี<?php echo e($staffColor); ?>
+        </p>
       </div>
       <div class="text-end">
-        <div style="font-size: 2.5rem; opacity: 0.7;">🏆</div>
+        <div style="font-size: 2.5rem; opacity: 0.7;">
+          <?php echo $viewMode ? '👁️' : '🏆'; ?>
+        </div>
       </div>
     </div>
   </div>
 
   <!-- Alerts -->
-  <?php if (!$registrationOpen): ?>
+  <?php if (!$registrationOpen && !$viewMode): ?>
     <div class="alert alert-warning border-0 shadow-sm">
       <strong>⛔ ระบบกำลังปิดรับลงทะเบียน</strong> ขณะนี้ดูข้อมูลได้อย่างเดียว
+    </div>
+  <?php endif; ?>
+
+  <?php if ($viewMode): ?>
+    <div class="alert alert-info border-0 shadow-sm">
+      <strong>👁️ โหมดดูอย่างเดียว</strong> คุณกำลังดูรายชื่อที่ลงทะเบียนไว้แล้ว
     </div>
   <?php endif; ?>
 
@@ -389,7 +465,7 @@ include __DIR__ . '/navbar.php';
   <?php endif; ?>
 
   <?php if ($sportId>0 && $sportDetail): ?>
-    <!-- โหมดเลือก/แก้ไขผู้เล่น -->
+    <!-- โหมดเลือก/แก้ไข/ดูผู้เล่น -->
     <div class="mb-3">
       <a href="<?php echo BASE_URL; ?>/staff/register.php" class="btn btn-outline-secondary">
         ← กลับรายการกีฬา
@@ -400,6 +476,9 @@ include __DIR__ . '/navbar.php';
           <?php echo count($prefill); ?>/<?php echo (int)$sportDetail['team_size']; ?>
         </strong> คน
       </span>
+      <?php if ($viewMode): ?>
+        <span class="ms-2 view-mode-badge">👁️ โหมดดู</span>
+      <?php endif; ?>
     </div>
 
     <div class="card form-card shadow-sm">
@@ -414,76 +493,117 @@ include __DIR__ . '/navbar.php';
           <?php endif; ?>
         </div>
 
-        <form method="post" action="<?php echo BASE_URL; ?>/staff/register.php?sport_id=<?php echo (int)$sportId; ?>" id="lineupForm">
-          <input type="hidden" name="action" value="save_lineup">
-          <input type="hidden" name="sport_id" value="<?php echo (int)$sportId; ?>">
+        <?php if ($viewMode): ?>
+          <!-- โหมดดูอย่างเดียว -->
+          <?php if (empty($prefill)): ?>
+            <div class="text-center py-5">
+              <div style="font-size: 3rem; margin-bottom: 1rem;">📭</div>
+              <p class="text-muted">ยังไม่มีการลงทะเบียนในกีฬานี้</p>
+            </div>
+          <?php else: ?>
+            <div class="mb-3">
+              <h6 class="fw-bold mb-3">👥 รายชื่อนักกีฬาที่ลงทะเบียนแล้ว:</h6>
+              <?php foreach ($prefill as $idx => $player): ?>
+                <div class="view-only-card">
+                  <div class="d-flex align-items-center gap-3">
+                    <div class="bg-white rounded-circle d-flex align-items-center justify-content-center" 
+                         style="width: 40px; height: 40px; border: 2px solid <?php echo $currentTheme['hex']; ?>;">
+                      <strong style="color: <?php echo $currentTheme['hex']; ?>;"><?php echo $idx + 1; ?></strong>
+                    </div>
+                    <div class="flex-grow-1">
+                      <div class="fw-bold"><?php echo e($player['fullname']); ?></div>
+                      <div class="small text-muted">
+                        รหัส: <?php echo e($player['student_code']); ?> | 
+                        ชั้น: <?php echo e($player['class_level']); ?>/<?php echo e($player['class_room']); ?> 
+                        เลขที่: <?php echo e($player['number_in_room']); ?>
+                      </div>
+                    </div>
+                    <div>
+                      <span class="badge" style="background: <?php echo $currentTheme['hex']; ?>;">✓ ลงทะเบียนแล้ว</span>
+                    </div>
+                  </div>
+                </div>
+              <?php endforeach; ?>
+            </div>
+          <?php endif; ?>
 
-          <datalist id="students_datalist">
-            <?php foreach($studentMap as $lbl => $id): ?>
-              <option value="<?php echo e($lbl); ?>"></option>
-            <?php endforeach; ?>
-          </datalist>
-
-          <div class="row g-3">
-            <?php
-              $prefillLabels = [];
-              foreach ($prefill as $row) {
-                $prefillLabels[] = $row['student_code'].' '.$row['fullname'].' ('.$row['class_level'].'/'.$row['class_room'].' เลขที่ '.$row['number_in_room'].')';
-              }
-              for ($i=1;$i<=$teamSize;$i++):
-                $val = $prefillLabels[$i-1] ?? '';
-                $prefillId = $val && isset($studentMap[$val]) ? $studentMap[$val] : 0;
-            ?>
-              <div class="col-md-6">
-                <label class="form-label fw-semibold">
-                  👤 ผู้เล่นที่ <?php echo $i; ?>
-                </label>
-                <input type="text" 
-                       class="form-control player-input student-input" 
-                       list="students_datalist" 
-                       placeholder="🔍 พิมพ์ค้นหา รหัส/ชื่อ..." 
-                       autocomplete="off" 
-                       value="<?php echo e($val); ?>" 
-                       <?php echo !$registrationOpen?'disabled':''; ?>>
-                <input type="hidden" name="student_id_<?php echo $i; ?>" class="student-id-hidden" value="<?php echo (int)$prefillId; ?>">
-                <div class="form-text">💡 ปล่อยว่าง = ไม่ใช้ช่องนี้</div>
-              </div>
-            <?php endfor; ?>
+          <div class="mt-4">
+            <a class="btn btn-light" href="<?php echo BASE_URL; ?>/staff/register.php">← กลับรายการกีฬา</a>
           </div>
 
-          <div class="mt-4 d-flex gap-2">
-            <a class="btn btn-light" href="<?php echo BASE_URL; ?>/staff/register.php">← ย้อนกลับ</a>
-            <button class="btn text-white" 
-                    style="background: <?php echo $currentTheme['hex']; ?>;"
-                    <?php echo !$registrationOpen?'disabled':''; ?>>
-              ✅ บันทึกการลงทะเบียน
-            </button>
-          </div>
-        </form>
+        <?php else: ?>
+          <!-- โหมดแก้ไข -->
+          <form method="post" action="<?php echo BASE_URL; ?>/staff/register.php?sport_id=<?php echo (int)$sportId; ?>" id="lineupForm">
+            <input type="hidden" name="action" value="save_lineup">
+            <input type="hidden" name="sport_id" value="<?php echo (int)$sportId; ?>">
+
+            <datalist id="students_datalist">
+              <?php foreach($studentMap as $lbl => $id): ?>
+                <option value="<?php echo e($lbl); ?>"></option>
+              <?php endforeach; ?>
+            </datalist>
+
+            <div class="row g-3">
+              <?php
+                $prefillLabels = [];
+                foreach ($prefill as $row) {
+                  $prefillLabels[] = $row['student_code'].' '.$row['fullname'].' ('.$row['class_level'].'/'.$row['class_room'].' เลขที่ '.$row['number_in_room'].')';
+                }
+                for ($i=1;$i<=$teamSize;$i++):
+                  $val = $prefillLabels[$i-1] ?? '';
+                  $prefillId = $val && isset($studentMap[$val]) ? $studentMap[$val] : 0;
+              ?>
+                <div class="col-md-6">
+                  <label class="form-label fw-semibold">
+                    👤 ผู้เล่นที่ <?php echo $i; ?>
+                  </label>
+                  <input type="text" 
+                         class="form-control player-input student-input" 
+                         list="students_datalist" 
+                         placeholder="🔍 พิมพ์ค้นหา รหัส/ชื่อ..." 
+                         autocomplete="off" 
+                         value="<?php echo e($val); ?>" 
+                         <?php echo !$registrationOpen?'disabled':''; ?>>
+                  <input type="hidden" name="student_id_<?php echo $i; ?>" class="student-id-hidden" value="<?php echo (int)$prefillId; ?>">
+                  <div class="form-text">💡 ปล่อยว่าง = ไม่ใช้ช่องนี้</div>
+                </div>
+              <?php endfor; ?>
+            </div>
+
+            <div class="mt-4 d-flex gap-2">
+              <a class="btn btn-light" href="<?php echo BASE_URL; ?>/staff/register.php">← ย้อนกลับ</a>
+              <button class="btn text-white" 
+                      style="background: <?php echo $currentTheme['hex']; ?>;"
+                      <?php echo !$registrationOpen?'disabled':''; ?>>
+                ✅ บันทึกการลงทะเบียน
+              </button>
+            </div>
+          </form>
+
+          <script>
+            const regOpen = <?php echo $registrationOpen ? 'true':'false'; ?>;
+            if (regOpen) {
+              const mapLabelToId = <?php echo json_encode($studentMap, JSON_UNESCAPED_UNICODE); ?>;
+              const form = document.getElementById('lineupForm');
+              form.addEventListener('submit', function(ev){
+                const inputs = Array.from(form.querySelectorAll('.student-input'));
+                const used = new Set();
+                for (let i=0;i<inputs.length;i++){
+                  const label = inputs[i].value.trim();
+                  const hid = inputs[i].parentElement.querySelector('.student-id-hidden');
+                  if (label === '') { hid.value = ''; continue; }
+                  const id = mapLabelToId[label] || 0;
+                  if (!id) { ev.preventDefault(); alert('❌ กรุณาเลือกจากรายการ หรือปล่อยว่าง'); return; }
+                  if (used.has(id)) { ev.preventDefault(); alert('❌ มีชื่อผู้เล่นซ้ำกันในฟอร์ม'); return; }
+                  used.add(id);
+                  hid.value = id;
+                }
+              });
+            }
+          </script>
+        <?php endif; ?>
       </div>
     </div>
-
-    <script>
-      const regOpen = <?php echo $registrationOpen ? 'true':'false'; ?>;
-      if (regOpen) {
-        const mapLabelToId = <?php echo json_encode($studentMap, JSON_UNESCAPED_UNICODE); ?>;
-        const form = document.getElementById('lineupForm');
-        form.addEventListener('submit', function(ev){
-          const inputs = Array.from(form.querySelectorAll('.student-input'));
-          const used = new Set();
-          for (let i=0;i<inputs.length;i++){
-            const label = inputs[i].value.trim();
-            const hid = inputs[i].parentElement.querySelector('.student-id-hidden');
-            if (label === '') { hid.value = ''; continue; }
-            const id = mapLabelToId[label] || 0;
-            if (!id) { ev.preventDefault(); alert('❌ กรุณาเลือกจากรายการ หรือปล่อยว่าง'); return; }
-            if (used.has(id)) { ev.preventDefault(); alert('❌ มีชื่อผู้เล่นซ้ำกันในฟอร์ม'); return; }
-            used.add(id);
-            hid.value = id;
-          }
-        });
-      }
-    </script>
 
   <?php else: ?>
     <!-- โหมดตารางรายการกีฬา -->
@@ -492,7 +612,9 @@ include __DIR__ . '/navbar.php';
         <div class="d-flex flex-wrap justify-content-between align-items-end gap-3">
           <div>
             <h5 class="mb-1">📋 รายการกีฬา</h5>
-            <p class="text-muted small mb-0">เลือกกีฬาเพื่อลงทะเบียนนักกีฬา</p>
+            <p class="text-muted small mb-0">
+              <?php echo $registrationOpen ? 'เลือกกีฬาเพื่อลงทะเบียนนักกีฬา' : 'เลือกกีฬาเพื่อดูรายชื่อนักกีฬา'; ?>
+            </p>
           </div>
           <form class="row g-2 align-items-end" method="get" action="<?php echo BASE_URL; ?>/staff/register.php" id="filterForm">
             <div class="col-auto">
@@ -555,15 +677,20 @@ include __DIR__ . '/navbar.php';
                 </div>
               </div>
               <div class="col-md-2 text-end">
-                <a class="btn btn-sm text-white <?php echo !$registrationOpen?'disabled':''; ?>"
-                   style="background: <?php echo $currentTheme['hex']; ?>;"
-                   <?php if ($registrationOpen): ?>
-                     href="<?php echo BASE_URL; ?>/staff/register.php?sport_id=<?php echo (int)$sp['id']; ?>"
-                   <?php else: ?>
-                     href="javascript:void(0)" title="ปิดรับลงทะเบียน"
-                   <?php endif; ?>>
-                   <?php echo $reg>0 ? '✏️ แก้ไข' : '✍️ ลงทะเบียน'; ?>
-                </a>
+                <?php if ($registrationOpen): ?>
+                  <!-- ปุ่มแก้ไข (เปิดลงทะเบียน) -->
+                  <a class="btn btn-sm text-white"
+                     style="background: <?php echo $currentTheme['hex']; ?>;"
+                     href="<?php echo BASE_URL; ?>/staff/register.php?sport_id=<?php echo (int)$sp['id']; ?>">
+                     <?php echo $reg>0 ? '✏️ แก้ไข' : '✍️ ลงทะเบียน'; ?>
+                  </a>
+                <?php else: ?>
+                  <!-- ปุ่มดู (ปิดลงทะเบียน) -->
+                  <a class="btn btn-sm btn-outline-secondary"
+                     href="<?php echo BASE_URL; ?>/staff/register.php?sport_id=<?php echo (int)$sp['id']; ?>&view=1">
+                     👁️ ดูรายชื่อ
+                  </a>
+                <?php endif; ?>
               </div>
             </div>
           </div>

@@ -85,11 +85,29 @@ if ($action === 'create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 
   if (!$errors) {
     try {
+      // ดึงชื่อประเภทกีฬา
+      $catNameStmt = $pdo->prepare("SELECT name FROM sport_categories WHERE id=?");
+      $catNameStmt->execute([$catId]);
+      $catName = $catNameStmt->fetchColumn();
+      
       $stmt = $pdo->prepare("INSERT INTO sports(year_id,category_id,name,gender,participant_type,team_size,grade_levels,is_active)
                              VALUES(?,?,?,?,?,?,?,?)");
       $stmt->execute([$yearId,$catId,$name,$gender,$ptype,$size,$grades,$active]);
+      $insertedId = $pdo->lastInsertId();
+      
+      // 🔥 LOG: เพิ่มกีฬาสำเร็จ
+      log_activity('CREATE', 'sports', $insertedId, 
+        sprintf("เพิ่มกีฬา: %s | ประเภท: %s | เพศ: %s | รูปแบบ: %s | จำนวน: %d | ชั้น: %s | สถานะ: %s | ปี ID:%d",
+          $name, $catName, $gender, $ptype, $size, $grades, 
+          $active ? 'เปิด' : 'ปิด', $yearId));
+      
       $messages[]='เพิ่มกีฬาสำเร็จ';
     } catch(Throwable $e) {
+      // 🔥 LOG: เพิ่มกีฬาไม่สำเร็จ
+      log_activity('ERROR', 'sports', null, 
+        sprintf("เพิ่มกีฬาไม่สำเร็จ: %s | ชื่อ: %s | ประเภท ID:%d", 
+          $e->getMessage(), $name, $catId));
+      
       $errors[]='เพิ่มไม่สำเร็จ (อาจชื่อ+เพศ+ประเภทซ้ำในปีนี้): '.e($e->getMessage());
     }
   }
@@ -115,12 +133,57 @@ if ($action === 'update' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 
   if (!$errors) {
     try {
+      // ดึงข้อมูลเดิมก่อนแก้ไข
+      $oldStmt = $pdo->prepare("
+        SELECT s.name, s.gender, s.participant_type, s.team_size, s.grade_levels, s.is_active,
+               sc.name AS cat_name
+        FROM sports s
+        LEFT JOIN sport_categories sc ON sc.id = s.category_id
+        WHERE s.id=? AND s.year_id=?
+      ");
+      $oldStmt->execute([$id, $yearId]);
+      $oldData = $oldStmt->fetch(PDO::FETCH_ASSOC);
+      
+      // ดึงชื่อประเภทกีฬาใหม่
+      $catNameStmt = $pdo->prepare("SELECT name FROM sport_categories WHERE id=?");
+      $catNameStmt->execute([$catId]);
+      $newCatName = $catNameStmt->fetchColumn();
+      
       $stmt = $pdo->prepare("UPDATE sports
         SET category_id=?, name=?, gender=?, participant_type=?, team_size=?, grade_levels=?, is_active=?
         WHERE id=? AND year_id=?");
       $stmt->execute([$catId,$name,$gender,$ptype,$size,$grades,$active,$id,$yearId]);
+      
+      // 🔥 LOG: แก้ไขกีฬาสำเร็จ
+      if ($oldData) {
+        $changes = [];
+        if ($oldData['name'] !== $name) $changes[] = "ชื่อ: {$oldData['name']} → {$name}";
+        if ($oldData['cat_name'] !== $newCatName) $changes[] = "ประเภท: {$oldData['cat_name']} → {$newCatName}";
+        if ($oldData['gender'] !== $gender) $changes[] = "เพศ: {$oldData['gender']} → {$gender}";
+        if ($oldData['participant_type'] !== $ptype) $changes[] = "รูปแบบ: {$oldData['participant_type']} → {$ptype}";
+        if ((int)$oldData['team_size'] !== $size) $changes[] = "จำนวน: {$oldData['team_size']} → {$size}";
+        if ($oldData['grade_levels'] !== $grades) $changes[] = "ชั้น: {$oldData['grade_levels']} → {$grades}";
+        if ((int)$oldData['is_active'] !== $active) {
+          $changes[] = "สถานะ: " . ((int)$oldData['is_active'] ? 'เปิด' : 'ปิด') . " → " . ($active ? 'เปิด' : 'ปิด');
+        }
+        
+        log_activity('UPDATE', 'sports', $id, 
+          sprintf("แก้ไขกีฬา: %s | %s | ปี ID:%d", 
+            $name, 
+            !empty($changes) ? implode(' | ', $changes) : 'ไม่มีการเปลี่ยนแปลง',
+            $yearId));
+      } else {
+        log_activity('UPDATE', 'sports', $id, 
+          sprintf("แก้ไขกีฬา ID:%d → %s | ปี ID:%d", $id, $name, $yearId));
+      }
+      
       $messages[]='แก้ไขสำเร็จ';
     } catch(Throwable $e) {
+      // 🔥 LOG: แก้ไขกีฬาไม่สำเร็จ
+      log_activity('ERROR', 'sports', $id, 
+        sprintf("แก้ไขกีฬาไม่สำเร็จ: %s | ID:%d | ชื่อ: %s", 
+          $e->getMessage(), $id, $name));
+      
       $errors[]='แก้ไขไม่สำเร็จ: '.e($e->getMessage());
     }
   }
@@ -132,10 +195,39 @@ if ($action === 'delete' && $_SERVER['REQUEST_METHOD'] === 'POST') {
   if ($id<=0) $errors[]='ไม่พบรายการ';
   else {
     try {
+      // ดึงข้อมูลก่อนลบ
+      $oldStmt = $pdo->prepare("
+        SELECT s.name, s.gender, s.participant_type, s.team_size, s.grade_levels,
+               sc.name AS cat_name
+        FROM sports s
+        LEFT JOIN sport_categories sc ON sc.id = s.category_id
+        WHERE s.id=? AND s.year_id=?
+      ");
+      $oldStmt->execute([$id, $yearId]);
+      $oldData = $oldStmt->fetch(PDO::FETCH_ASSOC);
+      
       $stmt = $pdo->prepare("DELETE FROM sports WHERE id=? AND year_id=?");
       $stmt->execute([$id,$yearId]);
+      
+      // 🔥 LOG: ลบกีฬาสำเร็จ
+      if ($oldData) {
+        log_activity('DELETE', 'sports', $id, 
+          sprintf("ลบกีฬา: %s | ประเภท: %s | เพศ: %s | รูปแบบ: %s | จำนวน: %d | ชั้น: %s | ปี ID:%d",
+            $oldData['name'], $oldData['cat_name'], $oldData['gender'], 
+            $oldData['participant_type'], $oldData['team_size'], 
+            $oldData['grade_levels'], $yearId));
+      } else {
+        log_activity('DELETE', 'sports', $id, 
+          sprintf("ลบกีฬา ID:%d | ปี ID:%d", $id, $yearId));
+      }
+      
       $messages[]='ลบสำเร็จ';
     } catch(Throwable $e) {
+      // 🔥 LOG: ลบกีฬาไม่สำเร็จ
+      log_activity('ERROR', 'sports', $id, 
+        sprintf("ลบกีฬาไม่สำเร็จ: %s | ID:%d | ปี ID:%d", 
+          $e->getMessage(), $id, $yearId));
+      
       $errors[]='ลบไม่สำเร็จ (อาจมีข้อมูลเชื่อมโยงการลงทะเบียน): '.e($e->getMessage());
     }
   }
@@ -146,6 +238,11 @@ if ($action === 'delete_all' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $confirm = trim($_POST['confirm_delete'] ?? '');
     if ($confirm === 'DELETE') {
         try {
+            // นับจำนวนก่อนลบ
+            $countStmt = $pdo->prepare("SELECT COUNT(*) FROM sports WHERE year_id=?");
+            $countStmt->execute([$yearId]);
+            $totalSports = $countStmt->fetchColumn();
+            
             $pdo->beginTransaction();
             
             // 1. ลบ track_results (เชื่อมผ่าน athletics_events.id = track_results.heat_id)
@@ -183,6 +280,11 @@ if ($action === 'delete_all' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             
             $pdo->commit();
             
+            // 🔥 LOG: ลบกีฬาทั้งหมดสำเร็จ
+            log_activity('DELETE', 'sports', null, 
+              sprintf("⚠️ ลบกีฬาทั้งหมด: กีฬา %d รายการ | ลงทะเบียน: %d | กรีฑา: %d | ผลแข่งขัน: %d | ปี ID:%d",
+                $delSports, $delReg, $delAth, $delTrack, $yearId));
+            
             $messages[] = "✅ ลบข้อมูลเรียบร้อย:<br>
                           - กีฬา: {$delSports} รายการ<br>
                           - การลงทะเบียน: {$delReg} รายการ<br>
@@ -190,6 +292,12 @@ if ($action === 'delete_all' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                           - ผลการแข่งขัน (track_results): {$delTrack} รายการ";
          } catch (Throwable $e) {
             $pdo->rollBack();
+            
+            // 🔥 LOG: ลบกีฬาทั้งหมดไม่สำเร็จ
+            log_activity('ERROR', 'sports', null, 
+              sprintf("ลบกีฬาทั้งหมดไม่สำเร็จ: %s | ปี ID:%d", 
+                $e->getMessage(), $yearId));
+            
             $errors[] = 'ลบไม่สำเร็จ: '.e($e->getMessage());
          }
      } else {
@@ -265,6 +373,11 @@ if ($action === 'copy_prev' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         
         $pdo->commit();
         
+        // 🔥 LOG: คัดลอกจากปีที่แล้วสำเร็จ
+        log_activity('COPY', 'sports', null, 
+          sprintf("คัดลอกกีฬาจากปีที่แล้ว: ทั้งหมด %d รายการ | เพิ่มใหม่: %d | อัปเดต: %d | ข้าม: %d | จาก ปี ID:%d → ปี ID:%d",
+            count($prevSports), $ins, $upd, $skip, $prevYearId, $yearId));
+        
         $messages[] = "✅ คัดลอกจากปีที่แล้วเรียบร้อย:<br>
                       - ปีที่แล้ว (ID: {$prevYearId}) มีกีฬา " . count($prevSports) . " รายการ<br>
                       - เพิ่มใหม่: <strong>{$ins}</strong> รายการ<br>
@@ -273,6 +386,12 @@ if ($action === 'copy_prev' && $_SERVER['REQUEST_METHOD'] === 'POST') {
       }
     } catch (Throwable $e) {
       if ($pdo->inTransaction()) $pdo->rollBack();
+      
+      // 🔥 LOG: คัดลอกจากปีที่แล้วไม่สำเร็จ
+      log_activity('ERROR', 'sports', null, 
+        sprintf("คัดลอกกีฬาไม่สำเร็จ: %s | จาก ปี ID:%d → ปี ID:%d", 
+          $e->getMessage(), $prevYearId, $yearId));
+      
       $errors[] = 'คัดลอกไม่สำเร็จ: ' . e($e->getMessage());
     }
   }
@@ -280,6 +399,10 @@ if ($action === 'copy_prev' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 
 /* CSV TEMPLATE */
 if (($_GET['action'] ?? '') === 'template') {
+  // 🔥 LOG: ดาวน์โหลด template
+  log_activity('DOWNLOAD', 'sports', null, 
+    sprintf("ดาวน์โหลด CSV Template กีฬา | ปี ID:%d", $yearId));
+  
   header('Content-Type: text/csv; charset=utf-8');
   header('Content-Disposition: attachment; filename="sports_template.csv"');
   echo "\xEF\xBB\xBF";
@@ -292,6 +415,15 @@ if (($_GET['action'] ?? '') === 'template') {
 
 /* EXPORT CSV */
 if (($_GET['action'] ?? '') === 'export') {
+  // นับจำนวนก่อน export
+  $countStmt = $pdo->prepare("SELECT COUNT(*) FROM sports WHERE year_id=?");
+  $countStmt->execute([$yearId]);
+  $totalExport = $countStmt->fetchColumn();
+  
+  // 🔥 LOG: ส่งออก CSV
+  log_activity('EXPORT', 'sports', null, 
+    sprintf("ส่งออกกีฬาเป็น CSV: %d รายการ | ปี ID:%d", $totalExport, $yearId));
+  
   header('Content-Type: text/csv; charset=utf-8');
   header('Content-Disposition: attachment; filename="sports_'.$yearId.'.csv"');
   echo "\xEF\xBB\xBF";
@@ -365,9 +497,21 @@ if ($action==='import_csv' && $_SERVER['REQUEST_METHOD']==='POST') {
             }
           }
           $pdo->commit();
+          
+          // 🔥 LOG: นำเข้า CSV สำเร็จ
+          log_activity('IMPORT', 'sports', null, 
+            sprintf("นำเข้ากีฬาจาก CSV: เพิ่มใหม่ %d รายการ | อัปเดต %d รายการ | ข้าม %d แถว | ปี ID:%d",
+              $ins, $upd, $skip, $yearId));
+          
           $messages[]="✅ นำเข้าเสร็จสิ้น: เพิ่มใหม่ {$ins} แถว, อัปเดต {$upd} แถว, ข้าม {$skip} แถว";
         }catch(Throwable $e){
           $pdo->rollBack();
+          
+          // 🔥 LOG: นำเข้า CSV ไม่สำเร็จ
+          log_activity('ERROR', 'sports', null, 
+            sprintf("นำเข้ากีฬาจาก CSV ไม่สำเร็จ: %s | เพิ่มแล้ว: %d | อัปเดตแล้ว: %d | ปี ID:%d",
+              $e->getMessage(), $ins, $upd, $yearId));
+          
           $errors[]='นำเข้าไม่สำเร็จ: '.e($e->getMessage());
         }
         fclose($h);
@@ -425,7 +569,7 @@ include __DIR__ . '/../includes/navbar.php';
           <h5 class="card-title mb-3">เพิ่มกีฬา (ปีปัจจุบัน)</h5>
 
           <?php if ($errors): ?><div class="alert alert-danger"><?= implode('<br>', array_map('e',$errors)); ?></div><?php endif; ?>
-          <?php if ($messages): ?><div class="alert alert-success"><?= implode('<br>', array_map('e',$messages)); ?></div><?php endif; ?>
+          <?php if ($messages): ?><div class="alert alert-success"><?= implode('<br>', $messages); ?></div><?php endif; ?>
 
           <form method="post" action="<?php echo BASE_URL; ?>/sports.php" class="row g-2">
             <input type="hidden" name="action" value="create">

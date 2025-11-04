@@ -1,6 +1,8 @@
 <?php
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../config/db.php';
+require_once __DIR__ . '/../lib/helpers.php';
+
 if (session_status() === PHP_SESSION_NONE) { session_start(); }
 if (empty($_SESSION['admin'])) { header('Location: ' . BASE_URL . '/login.php'); exit; }
 
@@ -24,8 +26,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'creat
         try {
             $stmt = $pdo->prepare('INSERT INTO academic_years (year_be, title) VALUES (?, ?)');
             $stmt->execute([$year_be, $title]);
+            $insertedId = $pdo->lastInsertId();
+            
+            // 🔥 LOG: เพิ่มปีการศึกษาสำเร็จ
+            log_activity('CREATE', 'academic_years', $insertedId, 
+                sprintf("เพิ่มปีการศึกษา: %s (พ.ศ. %d)", $title, $year_be));
+            
             $messages[] = 'เพิ่มปีการศึกษาเรียบร้อย';
         } catch (Throwable $e) {
+            // 🔥 LOG: เพิ่มปีการศึกษาไม่สำเร็จ
+            log_activity('ERROR', 'academic_years', null, 
+                sprintf("เพิ่มปีการศึกษาไม่สำเร็จ: %s | พ.ศ. %d | ชื่อ: %s", 
+                    $e->getMessage(), $year_be, $title));
+            
             $errors[] = 'ไม่สามารถเพิ่มปีการศึกษาได้ (อาจซ้ำกัน): ' . htmlspecialchars($e->getMessage(), ENT_QUOTES, 'UTF-8');
         }
     }
@@ -43,10 +56,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'updat
 
     if (!$errors) {
         try {
+            // ดึงข้อมูลเดิมก่อนแก้ไข
+            $oldStmt = $pdo->prepare('SELECT year_be, title FROM academic_years WHERE id = ?');
+            $oldStmt->execute([$id]);
+            $oldData = $oldStmt->fetch(PDO::FETCH_ASSOC);
+            
             $stmt = $pdo->prepare('UPDATE academic_years SET year_be = ?, title = ? WHERE id = ?');
             $stmt->execute([$year_be, $title, $id]);
+            
+            // 🔥 LOG: แก้ไขปีการศึกษาสำเร็จ
+            if ($oldData) {
+                log_activity('UPDATE', 'academic_years', $id, 
+                    sprintf("แก้ไขปีการศึกษา ID:%d | เดิม: %s (พ.ศ. %d) → ใหม่: %s (พ.ศ. %d)", 
+                        $id, $oldData['title'], $oldData['year_be'], $title, $year_be));
+            } else {
+                log_activity('UPDATE', 'academic_years', $id, 
+                    sprintf("แก้ไขปีการศึกษา ID:%d → %s (พ.ศ. %d)", $id, $title, $year_be));
+            }
+            
             $messages[] = 'แก้ไขปีการศึกษาเรียบร้อย';
         } catch (Throwable $e) {
+            // 🔥 LOG: แก้ไขปีการศึกษาไม่สำเร็จ
+            log_activity('ERROR', 'academic_years', $id, 
+                sprintf("แก้ไขปีการศึกษาไม่สำเร็จ: %s | ID:%d | พ.ศ. %d | ชื่อ: %s", 
+                    $e->getMessage(), $id, $year_be, $title));
+            
             $errors[] = 'ไม่สามารถแก้ไขได้: ' . htmlspecialchars($e->getMessage(), ENT_QUOTES, 'UTF-8');
         }
     }
@@ -59,10 +93,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delet
         $errors[] = 'ไม่พบรายการที่ต้องการลบ';
     } else {
         try {
+            // ดึงข้อมูลก่อนลบ
+            $oldStmt = $pdo->prepare('SELECT year_be, title, is_active FROM academic_years WHERE id = ?');
+            $oldStmt->execute([$id]);
+            $oldData = $oldStmt->fetch(PDO::FETCH_ASSOC);
+            
             $stmt = $pdo->prepare('DELETE FROM academic_years WHERE id = ?');
             $stmt->execute([$id]);
+            
+            // 🔥 LOG: ลบปีการศึกษาสำเร็จ
+            if ($oldData) {
+                log_activity('DELETE', 'academic_years', $id, 
+                    sprintf("ลบปีการศึกษา: %s (พ.ศ. %d) | สถานะ: %s", 
+                        $oldData['title'], $oldData['year_be'], 
+                        $oldData['is_active'] ? 'Active' : 'Inactive'));
+            } else {
+                log_activity('DELETE', 'academic_years', $id, 
+                    sprintf("ลบปีการศึกษา ID:%d", $id));
+            }
+            
             $messages[] = 'ลบปีการศึกษาเรียบร้อย';
         } catch (Throwable $e) {
+            // 🔥 LOG: ลบปีการศึกษาไม่สำเร็จ
+            log_activity('ERROR', 'academic_years', $id, 
+                sprintf("ลบปีการศึกษาไม่สำเร็จ: %s | ID:%d", $e->getMessage(), $id));
+            
             $errors[] = 'ไม่สามารถลบได้ (อาจมีข้อมูลเชื่อมโยงภายหลัง): ' . htmlspecialchars($e->getMessage(), ENT_QUOTES, 'UTF-8');
         }
     }
@@ -75,14 +130,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'activ
         $errors[] = 'ไม่พบรายการที่ต้องการตั้งค่า Active';
     } else {
         try {
+            // ดึงข้อมูลปีเดิมที่เป็น Active
+            $oldActiveStmt = $pdo->query('SELECT id, year_be, title FROM academic_years WHERE is_active = 1');
+            $oldActive = $oldActiveStmt->fetch(PDO::FETCH_ASSOC);
+            
+            // ดึงข้อมูลปีใหม่ที่จะตั้งเป็น Active
+            $newActiveStmt = $pdo->prepare('SELECT year_be, title FROM academic_years WHERE id = ?');
+            $newActiveStmt->execute([$id]);
+            $newActive = $newActiveStmt->fetch(PDO::FETCH_ASSOC);
+            
             $pdo->beginTransaction();
             $pdo->exec('UPDATE academic_years SET is_active = 0'); // ปิดทั้งหมด
             $stmt = $pdo->prepare('UPDATE academic_years SET is_active = 1 WHERE id = ?');
             $stmt->execute([$id]);
             $pdo->commit();
+            
+            // 🔥 LOG: ตั้งค่า Active สำเร็จ
+            $logDetail = sprintf("ตั้งปีการศึกษาปัจจุบัน: %s (พ.ศ. %d)", 
+                $newActive['title'] ?? 'Unknown', 
+                $newActive['year_be'] ?? 0);
+            
+            if ($oldActive && $oldActive['id'] != $id) {
+                $logDetail .= sprintf(" | ปิด: %s (พ.ศ. %d)", 
+                    $oldActive['title'], $oldActive['year_be']);
+            }
+            
+            log_activity('UPDATE', 'academic_years', $id, $logDetail);
+            
             $messages[] = 'ตั้งปีการศึกษาปัจจุบันเรียบร้อย';
         } catch (Throwable $e) {
             $pdo->rollBack();
+            
+            // 🔥 LOG: ตั้งค่า Active ไม่สำเร็จ
+            log_activity('ERROR', 'academic_years', $id, 
+                sprintf("ตั้งค่า Active ไม่สำเร็จ: %s | ID:%d", $e->getMessage(), $id));
+            
             $errors[] = 'ไม่สามารถตั้งค่า Active ได้: ' . htmlspecialchars($e->getMessage(), ENT_QUOTES, 'UTF-8');
         }
     }

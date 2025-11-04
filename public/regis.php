@@ -39,12 +39,35 @@ $messages=[]; $errors=[]; $warnings=[];
 if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['action']??'')==='toggle_registration') {
   if (!$yearId) { $errors[]='ยังไม่ได้ตั้งปีการศึกษาให้ Active'; }
   else {
+    $oldStatus = $regOpen;
+    $oldStart = $regStart;
+    $oldEnd = $regEnd;
+    
     $val   = isset($_POST['registration_is_open']) ? 1 : 0;
     $start = ($_POST['registration_start'] ?? '') ?: null;
     $end   = ($_POST['registration_end'] ?? '') ?: null;
+    
     $up = $pdo->prepare("UPDATE academic_years SET registration_is_open=?,registration_start=?,registration_end=? WHERE id=?");
     $up->execute([$val,$start,$end,$yearId]);
     $regOpen=(bool)$val; $regStart=$start; $regEnd=$end;
+    
+    // 🔥 LOG: เปลี่ยนสถานะการลงทะเบียน
+    $changes = [];
+    if ($oldStatus !== (bool)$val) {
+      $changes[] = "สถานะ: " . ($oldStatus ? 'เปิด' : 'ปิด') . " → " . ($val ? 'เปิด' : 'ปิด');
+    }
+    if ($oldStart !== $start) {
+      $changes[] = "เริ่ม: " . ($oldStart ?: '-') . " → " . ($start ?: '-');
+    }
+    if ($oldEnd !== $end) {
+      $changes[] = "สิ้นสุด: " . ($oldEnd ?: '-') . " → " . ($end ?: '-');
+    }
+    
+    log_activity('UPDATE', 'academic_years', $yearId, 
+      sprintf("เปลี่ยนสถานะการลงทะเบียน | ปี %d | %s", 
+        $yearBe,
+        !empty($changes) ? implode(' | ', $changes) : 'ไม่มีการเปลี่ยนแปลง'));
+    
     $messages[]='อัปเดตสถานะการลงทะเบียนเรียบร้อย';
   }
 }
@@ -125,15 +148,73 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['action']??'')==='admin_save_
         if(!$errors){
           try{
             $pdo->beginTransaction();
+            
+            // ดึงข้อมูลเดิมก่อนลบ (สำหรับ log)
+            $oldStmt = $pdo->prepare("
+              SELECT s.first_name, s.last_name, s.student_code
+              FROM registrations r
+              JOIN students s ON s.id = r.student_id
+              WHERE r.year_id=? AND r.sport_id=? AND r.color=?
+              ORDER BY s.first_name, s.last_name
+            ");
+            $oldStmt->execute([$yearId, $sportId, $teamColor]);
+            $oldPlayers = $oldStmt->fetchAll(PDO::FETCH_ASSOC);
+            $oldPlayerNames = array_map(function($p) {
+              return $p['student_code'] . ' ' . $p['first_name'] . ' ' . $p['last_name'];
+            }, $oldPlayers);
+            
             $del=$pdo->prepare("DELETE FROM registrations WHERE year_id=? AND sport_id=? AND color=?");
             $del->execute([$yearId,$sportId,$teamColor]);
+            
+            $newPlayerNames = [];
             if($chosen){
               $ins=$pdo->prepare("INSERT INTO registrations (year_id,sport_id,student_id,color) VALUES (?,?,?,?)");
-              foreach($chosen as $sid){ $ins->execute([$yearId,$sportId,$sid,$teamColor]); }
+              foreach($chosen as $sid){ 
+                $ins->execute([$yearId,$sportId,$sid,$teamColor]);
+                $stu = $students[$sid];
+                $newPlayerNames[] = $stu['first_name'] . ' ' . $stu['last_name'];
+              }
             }
+            
             $pdo->commit();
+            
+            // 🔥 LOG: บันทึกจัดทีมสำเร็จ
+            $logDetail = sprintf("จัดทีม: %s | สี%s | จำนวน: %d/%d คน", 
+              $sport['name'], 
+              $teamColor,
+              count($chosen),
+              $teamSize);
+            
+            if (!empty($oldPlayerNames)) {
+              $logDetail .= sprintf(" | ทีมเดิม: [%s]", implode(', ', $oldPlayerNames));
+            } else {
+              $logDetail .= " | ทีมเดิม: -";
+            }
+            
+            if (!empty($newPlayerNames)) {
+              $logDetail .= sprintf(" | ทีมใหม่: [%s]", implode(', ', $newPlayerNames));
+            } else {
+              $logDetail .= " | ทีมใหม่: ล้างทีม";
+            }
+            
+            $logDetail .= " | ปีการศึกษา ID:{$yearId}";
+            
+            log_activity('UPDATE', 'registrations', $sportId, $logDetail);
+            
             $messages[]='บันทึกสำเร็จ: อัปเดตรายชื่อทีมสี'.$teamColor.' ในกีฬา '.e($sport['name']);
-          }catch(Throwable $e){ $pdo->rollBack(); $errors[]='บันทึกไม่สำเร็จ: '.$e->getMessage(); }
+          }catch(Throwable $e){ 
+            $pdo->rollBack(); 
+            
+            // 🔥 LOG: บันทึกจัดทีมไม่สำเร็จ
+            log_activity('ERROR', 'registrations', $sportId, 
+              sprintf("จัดทีมไม่สำเร็จ: %s | กีฬา: %s | สี%s | จำนวน: %d คน", 
+                $e->getMessage(), 
+                $sport['name'], 
+                $teamColor,
+                count($chosen)));
+            
+            $errors[]='บันทึกไม่สำเร็จ: '.$e->getMessage(); 
+          }
         }
       }
     }
@@ -145,11 +226,45 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['action']??'')==='delete_all_
   $confirm = trim($_POST['confirm_delete'] ?? '');
   if ($confirm === 'DELETE') {
     try {
+      // นับจำนวนก่อนลบ
+      $countStmt = $pdo->prepare("SELECT COUNT(*) FROM registrations WHERE year_id=?");
+      $countStmt->execute([$yearId]);
+      $totalCount = (int)$countStmt->fetchColumn();
+      
+      // นับตามกีฬาและสี
+      $detailStmt = $pdo->prepare("
+        SELECT s.name AS sport_name, r.color, COUNT(*) AS cnt
+        FROM registrations r
+        JOIN sports s ON s.id = r.sport_id
+        WHERE r.year_id = ?
+        GROUP BY s.name, r.color
+        ORDER BY s.name, r.color
+      ");
+      $detailStmt->execute([$yearId]);
+      $details = $detailStmt->fetchAll(PDO::FETCH_ASSOC);
+      $detailText = array_map(function($d) {
+        return "{$d['sport_name']} สี{$d['color']} ({$d['cnt']} คน)";
+      }, $details);
+      
       $stmt = $pdo->prepare("DELETE FROM registrations WHERE year_id=?");
       $stmt->execute([$yearId]);
       $deleted = $stmt->rowCount();
+      
+      // 🔥 LOG: ลบการลงทะเบียนทั้งหมดสำเร็จ
+      log_activity('DELETE', 'registrations', null, 
+        sprintf("ลบการลงทะเบียนทั้งหมด: %d รายการ | ปี %d | รายละเอียด: [%s]", 
+          $deleted,
+          $yearBe,
+          !empty($detailText) ? implode(', ', $detailText) : 'ไม่มีข้อมูล'));
+      
       $messages[] = "✅ ลบการลงทะเบียนทั้งหมด {$deleted} รายการ เรียบร้อย (ปีการศึกษา {$yearBe})";
     } catch (Throwable $e) {
+      // 🔥 LOG: ลบการลงทะเบียนทั้งหมดไม่สำเร็จ
+      log_activity('ERROR', 'registrations', null, 
+        sprintf("ลบการลงทะเบียนทั้งหมดไม่สำเร็จ: %s | ปี %d", 
+          $e->getMessage(), 
+          $yearBe));
+      
       $errors[] = 'ลบไม่สำเร็จ: '.e($e->getMessage());
     }
   } else {

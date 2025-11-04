@@ -98,7 +98,7 @@ if (!$hideNav):
 
           <!-- กลุ่ม: จัดการกีฬา -->
           <li class="nav-item dropdown">
-            <a class="nav-link dropdown-toggle <?php echo in_array($current, ['sports.php','matches.php','athletics.php']) ? 'active' : ''; ?>" href="#" id="sportDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+            <a class="nav-link dropdown-toggle <?php echo in_array($current, ['sports.php','matches.php','athletics.php','users.php']) ? 'active' : ''; ?>" href="#" id="sportDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
               ⚽ จัดการกีฬา
             </a>
             <ul class="dropdown-menu" aria-labelledby="sportDropdown">
@@ -120,9 +120,9 @@ if (!$hideNav):
             </ul>
           </li>
 
-          <!-- เมนูรายงานแบบ dropdown -->
+          <!-- เมนูรายงานและ Logs แบบ dropdown -->
           <li class="nav-item dropdown">
-            <a class="nav-link dropdown-toggle <?php echo in_array($current, ['reports.php','reports_booklet.php','reports_athletics.php']) ? 'active' : ''; ?>" href="#" id="reportDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+            <a class="nav-link dropdown-toggle <?php echo in_array($current, ['reports.php','reports_booklet.php','reports_athletics.php','logs.php']) ? 'active' : ''; ?>" href="#" id="reportDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
               📋 รายงาน
             </a>
             <ul class="dropdown-menu" aria-labelledby="reportDropdown">
@@ -135,8 +135,16 @@ if (!$hideNav):
                 <a class="dropdown-item<?php echo $current === 'reports_booklet.php' ? ' active' : ''; ?>" href="<?php echo BASE_URL; ?>/reports_booklet.php">
                   📖 สูจิบัตรนักกีฬา (กีฬา)
                 </a>
+              </li>
+              <li>
                 <a class="dropdown-item<?php echo $current === 'reports_athletics.php' ? ' active' : ''; ?>" href="<?php echo BASE_URL; ?>/reports_athletics.php">
                   📗 สูจิบัตรนักกีฬา (กรีฑา)
+                </a>
+              </li>
+              <li><hr class="dropdown-divider"></li>
+              <li>
+                <a class="dropdown-item<?php echo $current === 'logs.php' ? ' active' : ''; ?>" href="<?php echo BASE_URL; ?>/logs.php">
+                  📜 Activity Logs
                 </a>
               </li>
             </ul>

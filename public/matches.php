@@ -52,6 +52,12 @@ function generate_for_sport(PDO $pdo, int $yearId, array $sport): array {
   if (!$sport) return ['ok'=>false,'msg'=>'ไม่พบกีฬา'];
   try {
     if (!$pdo->inTransaction()) { $pdo->beginTransaction(); }
+    
+    // นับจำนวนคู่เดิมก่อนลบ (สำหรับ log)
+    $countStmt = $pdo->prepare("SELECT COUNT(*) FROM match_pairs WHERE year_id=? AND sport_id=?");
+    $countStmt->execute([$yearId, (int)$sport['id']]);
+    $oldCount = (int)$countStmt->fetchColumn();
+    
     clear_pairs($pdo,$yearId,(int)$sport['id']);
     $ins = $pdo->prepare("INSERT INTO match_pairs
       (year_id, sport_id, round_name, round_no, match_no, match_date, match_time, venue,
@@ -68,16 +74,37 @@ function generate_for_sport(PDO $pdo, int $yearId, array $sport): array {
 
     $pairs = schedule_qualify_round($colors);
     $mno = 1;
+    $matchDetails = [];
     foreach ($pairs as $pair) {
       [$c1, $c2] = $pair;
       // สลับฝั่งแบบสุ่มเพื่อเพิ่มความหลากหลาย
       if (random_int(0,1) === 1) { [$c1, $c2] = [$c2, $c1]; }
       $ins->execute([$yearId,(int)$sport['id'],$mno++,"สี$c1",$c1,"สี$c2",$c2]);
+      $matchDetails[] = "สี{$c1} vs สี{$c2}";
     }
+    
     safeCommit($pdo);
+    
+    // 🔥 LOG: สุ่มคู่แข่งขันสำเร็จ
+    log_activity('CREATE', 'match_pairs', (int)$sport['id'], 
+      sprintf("สุ่มคู่แข่งขัน: %s | รอบคัดเลือก %d คู่ | คู่เดิม: %d | คู่ใหม่: [%s] | ปีการศึกษา ID:%d", 
+        $sport['name'], 
+        count($pairs),
+        $oldCount,
+        implode(', ', $matchDetails),
+        $yearId));
+    
     return ['ok'=>true,'msg'=>"สุ่มรอบคัดเลือก: {$sport['name']} สำเร็จ"];
   } catch (Throwable $e) {
     safeRollback($pdo);
+    
+    // 🔥 LOG: สุ่มคู่แข่งขันไม่สำเร็จ
+    log_activity('ERROR', 'match_pairs', (int)$sport['id'], 
+      sprintf("สุ่มคู่แข่งขันไม่สำเร็จ: %s | กีฬา: %s | ปีการศึกษา ID:%d", 
+        $e->getMessage(), 
+        $sport['name'] ?? 'unknown',
+        $yearId));
+    
     return ['ok'=>false,'msg'=>$e->getMessage()];
   }
 }
@@ -130,29 +157,111 @@ if ($_SERVER['REQUEST_METHOD']==='POST'){
     $sid=(int)$_POST['sport_id']; $res=generate_for_sport($pdo,$yearId,$map[$sid]??[]);
     flash($res['ok']?'ok':'err',$res['msg']); header('Location: '.BASE_URL.'/matches.php'.$qs); exit;
   }
+  
   if ($action==='gen_all'){
-    $ok=0; $fail=[];
-    foreach($sports as $row){ $r=generate_for_sport($pdo,$yearId,$row); if($r['ok']) $ok++; else $fail[]=$row['name']; }
+    $ok=0; $fail=[]; $sportNames = [];
+    foreach($sports as $row){ 
+      $r=generate_for_sport($pdo,$yearId,$row); 
+      if($r['ok']) { 
+        $ok++; 
+        $sportNames[] = $row['name'];
+      } else { 
+        $fail[]=$row['name']; 
+      }
+    }
+    
+    // 🔥 LOG: สุ่มทั้งหมดสำเร็จ
+    $logDetail = sprintf("สุ่มคู่แข่งขันทั้งหมด: สำเร็จ %d รายการ | กีฬา: [%s]", 
+      $ok, 
+      implode(', ', $sportNames));
+    if ($fail) {
+      $logDetail .= sprintf(" | ล้มเหลว %d รายการ: [%s]", count($fail), implode(', ', $fail));
+    }
+    $logDetail .= " | ปีการศึกษา ID:{$yearId}";
+    log_activity('CREATE', 'match_pairs', null, $logDetail);
+    
     $msg="สุ่มรอบคัดเลือกทั้งหมดสำเร็จ $ok รายการ"; if($fail) $msg.=" (ผิดพลาด: ".implode(', ',$fail).")";
     flash('ok',$msg); header('Location: '.BASE_URL.'/matches.php'.$qs); exit;
   }
+  
   if ($action==='clear_one' && !empty($_POST['sport_id'])){
     try {
       if (!$pdo->inTransaction()) { $pdo->beginTransaction(); }
-      $sid=(int)$_POST['sport_id']; clear_pairs($pdo,$yearId,$sid);
-      safeCommit($pdo); flash('ok','ล้างคู่ของรายการนี้แล้ว');
+      $sid=(int)$_POST['sport_id'];
+      
+      // นับจำนวนก่อนลบ
+      $countStmt = $pdo->prepare("SELECT COUNT(*) FROM match_pairs WHERE year_id=? AND sport_id=?");
+      $countStmt->execute([$yearId, $sid]);
+      $deletedCount = (int)$countStmt->fetchColumn();
+      
+      // ดึงชื่อกีฬา
+      $sportName = $map[$sid]['name'] ?? "ID:{$sid}";
+      
+      clear_pairs($pdo,$yearId,$sid);
+      safeCommit($pdo);
+      
+      // 🔥 LOG: ล้างคู่แข่งขันสำเร็จ
+      log_activity('DELETE', 'match_pairs', $sid, 
+        sprintf("ล้างคู่แข่งขัน: %s | ลบ %d คู่ | ปีการศึกษา ID:%d", 
+          $sportName, 
+          $deletedCount,
+          $yearId));
+      
+      flash('ok','ล้างคู่ของรายการนี้แล้ว');
     } catch(Throwable $e){
-      safeRollback($pdo); flash('err','ล้างไม่สำเร็จ: '.$e->getMessage());
+      safeRollback($pdo);
+      
+      // 🔥 LOG: ล้างคู่แข่งขันไม่สำเร็จ
+      log_activity('ERROR', 'match_pairs', $sid ?? null, 
+        sprintf("ล้างคู่แข่งขันไม่สำเร็จ: %s | กีฬา: %s", 
+          $e->getMessage(), 
+          $sportName ?? 'unknown'));
+      
+      flash('err','ล้างไม่สำเร็จ: '.$e->getMessage());
     }
     header('Location: '.BASE_URL.'/matches.php'.$qs); exit;
   }
+  
   if ($action==='clear_all'){
     try {
       if (!$pdo->inTransaction()) { $pdo->beginTransaction(); }
-      foreach($sports as $row){ clear_pairs($pdo,$yearId,(int)$row['id']); }
-      safeCommit($pdo); flash('ok','ล้างคู่ทั้งหมดแล้ว');
+      
+      $totalDeleted = 0;
+      $sportNames = [];
+      foreach($sports as $row){ 
+        // นับจำนวนก่อนลบ
+        $countStmt = $pdo->prepare("SELECT COUNT(*) FROM match_pairs WHERE year_id=? AND sport_id=?");
+        $countStmt->execute([$yearId, (int)$row['id']]);
+        $count = (int)$countStmt->fetchColumn();
+        
+        if ($count > 0) {
+          $sportNames[] = "{$row['name']} ({$count} คู่)";
+          $totalDeleted += $count;
+        }
+        
+        clear_pairs($pdo,$yearId,(int)$row['id']); 
+      }
+      
+      safeCommit($pdo);
+      
+      // 🔥 LOG: ล้างทั้งหมดสำเร็จ
+      log_activity('DELETE', 'match_pairs', null, 
+        sprintf("ล้างคู่แข่งขันทั้งหมด: ลบทั้งหมด %d คู่ | กีฬา: [%s] | ปีการศึกษา ID:%d", 
+          $totalDeleted,
+          implode(', ', $sportNames),
+          $yearId));
+      
+      flash('ok','ล้างคู่ทั้งหมดแล้ว');
     } catch(Throwable $e){
-      safeRollback($pdo); flash('err','ล้างทั้งหมดไม่สำเร็จ: '.$e->getMessage());
+      safeRollback($pdo);
+      
+      // 🔥 LOG: ล้างทั้งหมดไม่สำเร็จ
+      log_activity('ERROR', 'match_pairs', null, 
+        sprintf("ล้างคู่แข่งขันทั้งหมดไม่สำเร็จ: %s | ปีการศึกษา ID:%d", 
+          $e->getMessage(), 
+          $yearId));
+      
+      flash('err','ล้างทั้งหมดไม่สำเร็จ: '.$e->getMessage());
     }
     header('Location: '.BASE_URL.'/matches.php'.$qs); exit;
   }

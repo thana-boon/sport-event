@@ -1,6 +1,8 @@
 <?php
 require_once __DIR__ . '/../../config/config.php';
 require_once __DIR__ . '/../../config/db.php';
+require_once __DIR__ . '/../../lib/helpers.php';
+
 if (session_status() === PHP_SESSION_NONE) session_start();
 header('Content-Type: application/json; charset=utf-8');
 
@@ -42,6 +44,11 @@ try {
     $ranks = $data['ranks'] ?? [];
     if ($sport_id <= 0) throw new Exception('sport_id invalid');
 
+    // ดึงชื่อกีฬาสำหรับ log
+    $sportStmt = $pdo->prepare("SELECT name FROM sports WHERE id=?");
+    $sportStmt->execute([$sport_id]);
+    $sportName = $sportStmt->fetchColumn() ?: 'ID:' . $sport_id;
+
     $pdo->exec("CREATE TABLE IF NOT EXISTS referee_results (
       id INT AUTO_INCREMENT PRIMARY KEY,
       year_id INT NOT NULL,
@@ -55,11 +62,22 @@ try {
     $ins = $pdo->prepare("INSERT INTO referee_results (year_id, sport_id, color, rank)
                           VALUES (:y,:s,:c,:r)
                           ON DUPLICATE KEY UPDATE rank=VALUES(rank), updated_at=CURRENT_TIMESTAMP");
+    
+    // เก็บข้อมูลสำหรับ log
+    $details = [];
     foreach ($ranks as $color => $rk) {
       $r = (int)$rk;
       if ($r < 1 || $r > 4) continue;
       $ins->execute([':y' => $year_id, ':s' => $sport_id, ':c' => $color, ':r' => $r]);
+      $details[] = "สี{$color}: อันดับ {$r}";
     }
+
+    // 🔥 LOG: บันทึกผลกีฬาสากล
+    log_activity('UPDATE', 'referee_results', $sport_id, 
+      sprintf("บันทึกผลกีฬาสากล: %s | %s", 
+        $sportName, 
+        implode(', ', $details)));
+
     echo json_encode(['ok' => true]);
     exit;
   }
@@ -73,6 +91,11 @@ try {
     
     if ($sport_id <= 0) throw new Exception('sport_id invalid');
 
+    // ดึงชื่อกีฬาสำหรับ log
+    $sportStmt = $pdo->prepare("SELECT name FROM sports WHERE id=?");
+    $sportStmt->execute([$sport_id]);
+    $sportName = $sportStmt->fetchColumn() ?: 'ID:' . $sport_id;
+
     // First heat
     $h = $pdo->prepare("SELECT id FROM track_heats WHERE year_id=? AND sport_id=? ORDER BY heat_no ASC LIMIT 1");
     $h->execute([$year_id, $sport_id]);
@@ -83,6 +106,11 @@ try {
     $up = $pdo->prepare("INSERT INTO track_results (heat_id,lane_no,time_str,rank,is_record)
                          VALUES (:h,:lane,:t,:r,:rec)
                          ON DUPLICATE KEY UPDATE time_str=VALUES(time_str), rank=VALUES(rank), is_record=VALUES(is_record)");
+    
+    // เก็บข้อมูลสำหรับ log
+    $laneDetails = [];
+    $recordBreaker = false;
+    
     foreach ($lanes as $L) {
       $lane = (int)($L['lane_no'] ?? 0);
       if ($lane <= 0) continue;
@@ -90,6 +118,18 @@ try {
       $r = strlen(trim((string)($L['rank'] ?? ''))) ? (int)$L['rank'] : null;
       $isRec = !empty($L['is_record']) ? 1 : 0;
       $up->execute([':h' => $heat_id, ':lane' => $lane, ':t' => ($t !== '' ? $t : null), ':r' => $r, ':rec' => $isRec]);
+      
+      // เก็บข้อมูลสำหรับ log
+      if ($t !== '' || $r !== null) {
+        $laneInfo = "ลู่{$lane}";
+        if ($t !== '') $laneInfo .= " เวลา:{$t}";
+        if ($r !== null) $laneInfo .= " อันดับ:{$r}";
+        if ($isRec) {
+          $laneInfo .= " 🔥ทำลายสถิติ";
+          $recordBreaker = true;
+        }
+        $laneDetails[] = $laneInfo;
+      }
     }
 
     // อัปเดตสถิติ (ใช้ logic เดียว)
@@ -112,6 +152,23 @@ try {
       }
     }
 
+    // 🔥 LOG: บันทึกผลกรีฑา
+    $logDetail = sprintf("บันทึกผลกรีฑา: %s", $sportName);
+    if (!empty($laneDetails)) {
+      $logDetail .= " | ผล: " . implode(', ', $laneDetails);
+    }
+    if ($best_name || $best_time) {
+      $logDetail .= sprintf(" | สถิติ: %s เวลา:%s ปี:%s", 
+        $best_name ?: '-', 
+        $best_time ?: '-', 
+        $best_year ?: $year_be);
+    }
+    if ($recordBreaker) {
+      $logDetail .= " | 🔥มีการทำลายสถิติ";
+    }
+
+    log_activity('UPDATE', 'track_results', $sport_id, $logDetail);
+
     echo json_encode(['ok' => true]);
     exit;
   }
@@ -122,26 +179,45 @@ try {
           $sport_id = (int)($data['sport_id'] ?? 0);
           if ($sport_id <= 0) throw new Exception('missing sport_id');
 
+          // ดึงชื่อกีฬาก่อนลบ
+          $sportStmt = $pdo->prepare("SELECT name FROM sports WHERE id=?");
+          $sportStmt->execute([$sport_id]);
+          $sportName = $sportStmt->fetchColumn() ?: 'ID:' . $sport_id;
+
           $pdo->beginTransaction();
 
           // 1) ลบผลกรีฑา (track_results) ตาม heat_id
           $h = $pdo->prepare("SELECT id FROM track_heats WHERE year_id=? AND sport_id=?");
           $h->execute([$year_id, $sport_id]);
           $heatIds = $h->fetchAll(PDO::FETCH_COLUMN, 0);
+          $deletedTrack = 0;
           if ($heatIds) {
               $in = implode(',', array_fill(0, count($heatIds), '?'));
               $delTr = $pdo->prepare("DELETE FROM track_results WHERE heat_id IN ($in)");
               $delTr->execute($heatIds);
+              $deletedTrack = $delTr->rowCount();
           }
 
           // 2) ลบผลกีฬาอื่น (referee_results)
           $delRef = $pdo->prepare("DELETE FROM referee_results WHERE year_id=? AND sport_id=?");
           $delRef->execute([$year_id, $sport_id]);
+          $deletedRef = $delRef->rowCount();
 
           $pdo->commit();
+
+          // 🔥 LOG: ลบผลสำเร็จ
+          log_activity('DELETE', 'results', $sport_id, 
+            sprintf("ลบผลการแข่งขัน: %s | ลบ track_results: %d แถว | ลบ referee_results: %d แถว", 
+              $sportName, $deletedTrack, $deletedRef));
+
           echo json_encode(['ok'=>true,'deleted'=>true]);
       } catch (Throwable $e) {
           if ($pdo && $pdo->inTransaction()) $pdo->rollBack();
+          
+          // 🔥 LOG: ลบผลไม่สำเร็จ
+          log_activity('ERROR', 'results', $sport_id ?? null, 
+            'ลบผลการแข่งขันไม่สำเร็จ: ' . $e->getMessage() . ' | กีฬา: ' . ($sportName ?? 'unknown'));
+          
           echo json_encode(['ok'=>false,'error'=>$e->getMessage()]);
       }
       exit;
@@ -149,5 +225,9 @@ try {
 
   echo json_encode(['ok' => false, 'error' => 'unknown type']);
 } catch (Throwable $e) {
+  // 🔥 LOG: Error ทั่วไป
+  log_activity('ERROR', 'referee_save', null, 
+    'เกิดข้อผิดพลาดในการบันทึก: ' . $e->getMessage());
+  
   echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
 }

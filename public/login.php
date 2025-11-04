@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../config/db.php';
+require_once __DIR__ . '/../lib/helpers.php';
 
 if (session_status() === PHP_SESSION_NONE) { session_start(); }
 
@@ -31,12 +32,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'staff_color'  => $user['staff_color'],
       ];
       $_SESSION['last_activity'] = time();
+      
+      // 🔥 LOG: Login สำเร็จ
+      log_activity('LOGIN', 'users', $user['id'], 
+        'เข้าสู่ระบบสำเร็จ (admin) | Display: ' . ($user['display_name'] ?: $user['username']));
+      
       header('Location: ' . BASE_URL . '/index.php');
       exit;
     } else {
+      // 🔥 LOG: พยายาม login ด้วย role ที่ไม่ใช่ admin
+      log_activity('LOGIN_DENIED', 'users', $user['id'] ?? null, 
+        'พยายามเข้าสู่ระบบด้วยบัญชีที่ไม่ใช่ admin | Username: ' . $username . ' | Role: ' . ($user['role'] ?? 'unknown'));
+      
       $error = 'บัญชีนี้ไม่มีสิทธิ์เข้าแดชบอร์ด (admin เท่านั้น)';
     }
   } else {
+    // 🔥 LOG: Login ไม่สำเร็จ (username/password ผิด)
+    log_activity('LOGIN_FAILED', 'users', null, 
+      'พยายามเข้าสู่ระบบไม่สำเร็จ | Username: ' . $username);
+    
     $error = 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง';
   }
 }

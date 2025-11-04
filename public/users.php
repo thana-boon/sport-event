@@ -2,6 +2,7 @@
 // public/users.php
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../config/db.php';
+require_once __DIR__ . '/../lib/helpers.php';
 
 if (session_status() === PHP_SESSION_NONE) { session_start(); }
 if (empty($_SESSION['admin'])) { header('Location: ' . BASE_URL . '/login.php'); exit; }
@@ -54,8 +55,25 @@ if ($action === 'create' && $_SERVER['REQUEST_METHOD']==='POST') {
       $stmt = $pdo->prepare("INSERT INTO users(username,password_hash,display_name,role,staff_color,is_active)
                              VALUES(?,?,?,?,?,?)");
       $stmt->execute([$username,$hash,$display,$role,$color,$active]);
+      $insertedId = $pdo->lastInsertId();
+      
+      // 🔥 LOG: เพิ่มผู้ใช้สำเร็จ
+      log_activity('CREATE', 'users', $insertedId, 
+        sprintf("เพิ่มผู้ใช้: %s | ชื่อแสดง: %s | สิทธิ์: %s%s | สถานะ: %s", 
+          $username, 
+          $display, 
+          $role,
+          ($role === 'staff' && $color) ? " | สี: {$color}" : '',
+          $active ? 'เปิด' : 'ปิด'));
+      
       $messages[]='เพิ่มผู้ใช้เรียบร้อย';
     } catch (Throwable $e) {
+      // 🔥 LOG: เพิ่มผู้ใช้ไม่สำเร็จ
+      log_activity('ERROR', 'users', null, 
+        sprintf("เพิ่มผู้ใช้ไม่สำเร็จ: %s | ชื่อผู้ใช้: %s", 
+          $e->getMessage(), 
+          $username));
+      
       $errors[]='เพิ่มไม่สำเร็จ (อาจชื่อผู้ใช้ซ้ำ): '.e($e->getMessage());
     }
   }
@@ -88,6 +106,11 @@ if ($action === 'update' && $_SERVER['REQUEST_METHOD']==='POST') {
 
   if (!$errors) {
     try {
+      // ดึงข้อมูลเดิมก่อนแก้ไข
+      $oldStmt = $pdo->prepare("SELECT username, display_name, role, staff_color, is_active FROM users WHERE id=?");
+      $oldStmt->execute([$id]);
+      $oldData = $oldStmt->fetch(PDO::FETCH_ASSOC);
+      
       // เช็ค username ซ้ำ (ยกเว้นตัวเอง)
       $chk = $pdo->prepare("SELECT COUNT(*) FROM users WHERE username=? AND id<>?");
       $chk->execute([$username,$id]);
@@ -104,6 +127,32 @@ if ($action === 'update' && $_SERVER['REQUEST_METHOD']==='POST') {
         }
         $stmt=$pdo->prepare($sql);
         $stmt->execute($args);
+        
+        // 🔥 LOG: แก้ไขผู้ใช้สำเร็จ
+        if ($oldData) {
+          $changes = [];
+          if ($oldData['username'] !== $username) $changes[] = "ชื่อผู้ใช้: {$oldData['username']} → {$username}";
+          if ($oldData['display_name'] !== $display) $changes[] = "ชื่อแสดง: {$oldData['display_name']} → {$display}";
+          if ($oldData['role'] !== $role) $changes[] = "สิทธิ์: {$oldData['role']} → {$role}";
+          if ($oldData['staff_color'] !== $color) {
+            $oldColor = $oldData['staff_color'] ?: '-';
+            $newColor = $color ?: '-';
+            $changes[] = "สี: {$oldColor} → {$newColor}";
+          }
+          if ((int)$oldData['is_active'] !== $active) {
+            $changes[] = "สถานะ: " . ((int)$oldData['is_active'] ? 'เปิด' : 'ปิด') . " → " . ($active ? 'เปิด' : 'ปิด');
+          }
+          if ($password !== '') $changes[] = "รหัสผ่าน: เปลี่ยนแปลง";
+          
+          log_activity('UPDATE', 'users', $id, 
+            sprintf("แก้ไขผู้ใช้: %s | %s", 
+              $username,
+              !empty($changes) ? implode(' | ', $changes) : 'ไม่มีการเปลี่ยนแปลง'));
+        } else {
+          log_activity('UPDATE', 'users', $id, 
+            sprintf("แก้ไขผู้ใช้ ID:%d → %s", $id, $username));
+        }
+        
         $messages[]='บันทึกผู้ใช้เรียบร้อย';
         // ถ้าแก้ตัวเอง อัปเดต session ด้วย
         if ($id === $selfId) {
@@ -114,6 +163,13 @@ if ($action === 'update' && $_SERVER['REQUEST_METHOD']==='POST') {
         }
       }
     } catch (Throwable $e) {
+      // 🔥 LOG: แก้ไขผู้ใช้ไม่สำเร็จ
+      log_activity('ERROR', 'users', $id, 
+        sprintf("แก้ไขผู้ใช้ไม่สำเร็จ: %s | ID:%d | ชื่อผู้ใช้: %s", 
+          $e->getMessage(), 
+          $id, 
+          $username));
+      
       $errors[]='แก้ไขไม่สำเร็จ: '.e($e->getMessage());
     }
   }
@@ -127,9 +183,32 @@ if ($action === 'delete' && $_SERVER['REQUEST_METHOD']==='POST') {
   elseif ($id===$selfId) $errors[]='ไม่สามารถลบผู้ใช้ที่กำลังล็อกอินอยู่';
   else {
     try {
+      // ดึงข้อมูลก่อนลบ
+      $oldStmt = $pdo->prepare("SELECT username, display_name, role, staff_color, is_active FROM users WHERE id=?");
+      $oldStmt->execute([$id]);
+      $oldData = $oldStmt->fetch(PDO::FETCH_ASSOC);
+      
       $pdo->prepare("DELETE FROM users WHERE id=?")->execute([$id]);
+      
+      // 🔥 LOG: ลบผู้ใช้สำเร็จ
+      if ($oldData) {
+        log_activity('DELETE', 'users', $id, 
+          sprintf("ลบผู้ใช้: %s | ชื่อแสดง: %s | สิทธิ์: %s%s | สถานะ: %s", 
+            $oldData['username'], 
+            $oldData['display_name'], 
+            $oldData['role'],
+            ($oldData['staff_color'] ? " | สี: {$oldData['staff_color']}" : ''),
+            (int)$oldData['is_active'] ? 'เปิด' : 'ปิด'));
+      } else {
+        log_activity('DELETE', 'users', $id, sprintf("ลบผู้ใช้ ID:%d", $id));
+      }
+      
       $messages[]='ลบผู้ใช้เรียบร้อย';
     } catch (Throwable $e) {
+      // 🔥 LOG: ลบผู้ใช้ไม่สำเร็จ
+      log_activity('ERROR', 'users', $id, 
+        sprintf("ลบผู้ใช้ไม่สำเร็จ: %s | ID:%d", $e->getMessage(), $id));
+      
       $errors[]='ลบไม่สำเร็จ: '.e($e->getMessage());
     }
   }
@@ -137,6 +216,9 @@ if ($action === 'delete' && $_SERVER['REQUEST_METHOD']==='POST') {
 
 /* COPY/CSV (template/export/import) */
 if (($_GET['action'] ?? '') === 'template') {
+  // 🔥 LOG: ดาวน์โหลด template
+  log_activity('DOWNLOAD', 'users', null, 'ดาวน์โหลด CSV Template สำหรับนำเข้าผู้ใช้');
+  
   header('Content-Type: text/csv; charset=utf-8');
   header('Content-Disposition: attachment; filename="users_template.csv"');
   echo "\xEF\xBB\xBF";
@@ -149,6 +231,14 @@ if (($_GET['action'] ?? '') === 'template') {
 }
 
 if (($_GET['action'] ?? '') === 'export') {
+  // นับจำนวนก่อน export
+  $countStmt = $pdo->query("SELECT COUNT(*) FROM users");
+  $totalExport = (int)$countStmt->fetchColumn();
+  
+  // 🔥 LOG: ส่งออก CSV
+  log_activity('EXPORT', 'users', null, 
+    sprintf("ส่งออกผู้ใช้เป็น CSV: %d คน", $totalExport));
+  
   header('Content-Type: text/csv; charset=utf-8');
   header('Content-Disposition: attachment; filename="users.csv"');
   echo "\xEF\xBB\xBF";
@@ -212,9 +302,21 @@ if ($action==='import_csv' && $_SERVER['REQUEST_METHOD']==='POST') {
             }
           }
           $pdo->commit();
+          
+          // 🔥 LOG: นำเข้า CSV สำเร็จ
+          log_activity('IMPORT', 'users', null, 
+            sprintf("นำเข้าผู้ใช้จาก CSV: เพิ่มใหม่ %d คน | อัปเดต %d คน | ข้าม %d แถว", 
+              $ins, $upd, $skip));
+          
           $messages[]="✅ นำเข้าเสร็จสิ้น: เพิ่มใหม่ {$ins} แถว, อัปเดต {$upd} แถว, ข้าม {$skip} แถว";
         } catch(Throwable $e){
           $pdo->rollBack();
+          
+          // 🔥 LOG: นำเข้า CSV ไม่สำเร็จ
+          log_activity('ERROR', 'users', null, 
+            sprintf("นำเข้า CSV ไม่สำเร็จ: %s | เพิ่มแล้ว: %d | อัปเดตแล้ว: %d", 
+              $e->getMessage(), $ins, $upd));
+          
           $errors[]='นำเข้าไม่สำเร็จ: '.e($e->getMessage());
         }
         fclose($h);

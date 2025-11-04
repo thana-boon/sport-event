@@ -1,6 +1,8 @@
 <?php
 require_once __DIR__ . '/../../config/config.php';
 require_once __DIR__ . '/../../config/db.php';
+require_once __DIR__ . '/../../lib/helpers.php';
+
 if (session_status() === PHP_SESSION_NONE) { session_start(); }
 
 // ถ้า staff ล็อกอินอยู่แล้ว → ไปหน้า dashboard
@@ -35,9 +37,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // เริ่มจับเวลา inactivity
     $_SESSION['last_activity'] = time();
 
+    // 🔥 LOG: Login สำเร็จ (staff)
+    log_activity('LOGIN', 'users', $u['id'], 
+      'เข้าสู่ระบบสำเร็จ (staff) | Display: ' . ($u['display_name'] ?: $u['username']) . ' | สี: ' . ($u['staff_color'] ?: '-'));
+
     header('Location: ' . BASE_URL . '/staff/index.php');
     exit;
   } else {
+    // ตรวจสอบว่ามี username นี้อยู่แต่ไม่ใช่ staff หรือถูกปิดใช้งาน
+    $checkStmt = $pdo->prepare("SELECT id, username, role, is_active FROM users WHERE username=? LIMIT 1");
+    $checkStmt->execute([$username]);
+    $checkUser = $checkStmt->fetch(PDO::FETCH_ASSOC);
+
+    if ($checkUser) {
+      if ($checkUser['role'] !== 'staff') {
+        // 🔥 LOG: พยายาม login ด้วย role ที่ไม่ใช่ staff
+        log_activity('LOGIN_DENIED', 'users', $checkUser['id'], 
+          'พยายามเข้าสู่ระบบด้วยบัญชีที่ไม่ใช่ staff | Username: ' . $username . ' | Role: ' . ($checkUser['role'] ?? 'unknown'));
+      } elseif ($checkUser['is_active'] == 0) {
+        // 🔥 LOG: บัญชีถูกปิดใช้งาน
+        log_activity('LOGIN_DISABLED', 'users', $checkUser['id'], 
+          'พยายามเข้าสู่ระบบด้วยบัญชีที่ถูกปิดใช้งาน | Username: ' . $username);
+      } else {
+        // 🔥 LOG: รหัสผ่านผิด
+        log_activity('LOGIN_FAILED', 'users', $checkUser['id'], 
+          'พยายามเข้าสู่ระบบด้วยรหัสผ่านผิด | Username: ' . $username);
+      }
+    } else {
+      // 🔥 LOG: ไม่พบ username
+      log_activity('LOGIN_FAILED', 'users', null, 
+        'พยายามเข้าสู่ระบบด้วย username ที่ไม่มีในระบบ | Username: ' . $username);
+    }
+    
     $error = 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง (หรือบัญชีถูกปิดใช้งาน)';
   }
 }

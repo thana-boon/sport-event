@@ -1,6 +1,8 @@
 <?php
 require_once __DIR__ . '/../../config/config.php';
 require_once __DIR__ . '/../../config/db.php';
+require_once __DIR__ . '/../../lib/helpers.php';
+
 if (session_status() === PHP_SESSION_NONE) session_start();
 $pdo = db();
 
@@ -10,6 +12,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $p = trim($_POST['password'] ?? '');
   if ($u === '' || $p === '') {
     $err = 'กรุณากรอกชื่อผู้ใช้และรหัสผ่าน';
+    
+    // 🔥 LOG: กรอกข้อมูลไม่ครบ
+    log_activity('LOGIN_FAILED', 'users', null, 
+      'พยายามเข้าสู่ระบบโดยไม่กรอกข้อมูล (referee)');
   } else {
     // ตาราง users: id, username, password_hash, display_name, role, staff_color, is_active, created_at
     $st = $pdo->prepare("SELECT id, username, password_hash, display_name, role, is_active 
@@ -24,12 +30,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (($user['role'] ?? '') === 'referee') {
           $ok = true;
         } else {
+          // 🔥 LOG: พยายาม login ด้วย role ที่ไม่ใช่ referee
+          log_activity('LOGIN_DENIED', 'users', $user['id'], 
+            'พยายามเข้าสู่ระบบด้วยบัญชีที่ไม่ใช่ referee | Username: ' . $u . ' | Role: ' . ($user['role'] ?? 'unknown'));
+          
           $err = 'บัญชีนี้ไม่ได้รับสิทธิ์ผู้ตัดสิน (role ต้องเป็น referee)';
         }
       } else {
+        // 🔥 LOG: รหัสผ่านผิด
+        log_activity('LOGIN_FAILED', 'users', $user['id'], 
+          'พยายามเข้าสู่ระบบด้วยรหัสผ่านผิด (referee) | Username: ' . $u);
+        
         $err = 'รหัสผ่านไม่ถูกต้อง';
       }
     } else {
+      if ($user && (int)$user['is_active'] === 0) {
+        // 🔥 LOG: บัญชีถูกปิดใช้งาน
+        log_activity('LOGIN_DISABLED', 'users', $user['id'], 
+          'พยายามเข้าสู่ระบบด้วยบัญชีที่ถูกปิดใช้งาน (referee) | Username: ' . $u);
+      } else {
+        // 🔥 LOG: ไม่พบ username
+        log_activity('LOGIN_FAILED', 'users', null, 
+          'พยายามเข้าสู่ระบบด้วย username ที่ไม่มีในระบบ (referee) | Username: ' . $u);
+      }
+      
       $err = 'ไม่พบบัญชีผู้ใช้ หรือถูกปิดการใช้งาน';
     }
 
@@ -40,6 +64,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'name' => $user['display_name'] ?: $user['username'],
         'role' => 'referee'
       ];
+      
+      // 🔥 LOG: Login สำเร็จ
+      log_activity('LOGIN', 'users', $user['id'], 
+        'เข้าสู่ระบบสำเร็จ (referee) | Display: ' . ($user['display_name'] ?: $user['username']));
+      
       header('Location: ' . BASE_URL . '/referee/index.php');
       exit;
     }

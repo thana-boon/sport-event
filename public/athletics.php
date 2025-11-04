@@ -82,6 +82,11 @@ function generate_one_heat(PDO $pdo, int $yearId, array $sport): array {
   try {
     if (!$pdo->inTransaction()) $pdo->beginTransaction();
 
+    // นับจำนวน heat เดิมก่อนลบ (สำหรับ log)
+    $countStmt = $pdo->prepare("SELECT COUNT(*) FROM track_heats WHERE year_id=? AND sport_id=?");
+    $countStmt->execute([$yearId, (int)$sport['id']]);
+    $oldHeatCount = (int)$countStmt->fetchColumn();
+
     // ล้างของเดิม
     clear_heats($pdo, $yearId, (int)$sport['id']);
 
@@ -91,18 +96,25 @@ function generate_one_heat(PDO $pdo, int $yearId, array $sport): array {
     $heatId = (int)$pdo->lastInsertId();
 
     // กำหนดสีลงลู่
+    $laneDetails = [];
     if ($isRelay) {
       // ผลัด: สุ่ม 4 สี สำหรับลู่ 1–4 (คงเดิม)
       $laneColors = COLORS;
       shuffle($laneColors);
       $assign = [];
-      for ($i=1; $i<=4; $i++) $assign[$i] = $laneColors[$i-1];
+      for ($i=1; $i<=4; $i++) {
+        $assign[$i] = $laneColors[$i-1];
+        $laneDetails[] = "ลู่{$i}:สี{$laneColors[$i-1]}";
+      }
     } else {
       // เดี่ยว: สุ่ม 4 สีให้ลู่ 1–4 แล้ว "วนซ้ำ" ให้ลู่ 5–8
       $base = COLORS;
       shuffle($base);
       $assign = [];
-      for ($i=1; $i<=8; $i++) $assign[$i] = $base[($i-1) % 4];
+      for ($i=1; $i<=8; $i++) {
+        $assign[$i] = $base[($i-1) % 4];
+        $laneDetails[] = "ลู่{$i}:สี{$base[($i-1) % 4]}";
+      }
     }
 
     // บันทึกลง track_lane_assignments
@@ -112,10 +124,29 @@ function generate_one_heat(PDO $pdo, int $yearId, array $sport): array {
     }
 
     safeCommit($pdo);
+    
+    // 🔥 LOG: สุ่มลู่กรีฑาสำเร็จ
     $lbl = $isRelay ? 'วิ่งผลัด' : 'วิ่งเดี่ยว';
+    log_activity('CREATE', 'track_heats', $heatId, 
+      sprintf("สุ่มลู่กรีฑา: %s (%s) | ใช้ %d ลู่ | Heat เดิม: %d | รายละเอียด: [%s] | ปีการศึกษา ID:%d", 
+        $sport['name'], 
+        $lbl,
+        $lanesUsed,
+        $oldHeatCount,
+        implode(', ', $laneDetails),
+        $yearId));
+    
     return ['ok'=>true,'msg'=>"สุ่มลู่สำเร็จ: {$sport['name']} ({$lbl})"];
   } catch (Throwable $e) {
     safeRollback($pdo);
+    
+    // 🔥 LOG: สุ่มลู่กรีฑาไม่สำเร็จ
+    log_activity('ERROR', 'track_heats', (int)$sport['id'], 
+      sprintf("สุ่มลู่กรีฑาไม่สำเร็จ: %s | กีฬา: %s | ปีการศึกษา ID:%d", 
+        $e->getMessage(), 
+        $sport['name'],
+        $yearId));
+    
     return ['ok'=>false,'msg'=>$e->getMessage()];
   }
 }
@@ -123,38 +154,125 @@ function generate_one_heat(PDO $pdo, int $yearId, array $sport): array {
 // ------------ actions ------------
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $action = $_POST['action'] ?? '';
+  
   if ($action === 'gen_one' && !empty($_POST['sport_id'])) {
     $sid = (int)$_POST['sport_id'];
     $res = generate_one_heat($pdo, $yearId, $spMap[$sid] ?? []);
     flash($res['ok'] ? 'ok' : 'err', $res['msg']);
     header('Location: ' . BASE_URL . '/athletics.php'); exit;
   }
+  
   if ($action === 'clear_one' && !empty($_POST['sport_id'])) {
     try {
       if (!$pdo->inTransaction()) $pdo->beginTransaction();
-      clear_heats($pdo, $yearId, (int)$_POST['sport_id']);
-      safeCommit($pdo); flash('ok', 'ล้างฮีตของรายการนี้แล้ว');
+      $sid = (int)$_POST['sport_id'];
+      
+      // นับจำนวนก่อนลบ
+      $countStmt = $pdo->prepare("SELECT COUNT(*) FROM track_heats WHERE year_id=? AND sport_id=?");
+      $countStmt->execute([$yearId, $sid]);
+      $deletedCount = (int)$countStmt->fetchColumn();
+      
+      // ดึงชื่อกีฬา
+      $sportName = $spMap[$sid]['name'] ?? "ID:{$sid}";
+      $sportType = $spMap[$sid]['participant_type'] ?? 'unknown';
+      $lbl = ($sportType === 'ทีม') ? 'วิ่งผลัด' : 'วิ่งเดี่ยว';
+      
+      clear_heats($pdo, $yearId, $sid);
+      safeCommit($pdo);
+      
+      // 🔥 LOG: ล้างฮีตสำเร็จ
+      log_activity('DELETE', 'track_heats', $sid, 
+        sprintf("ล้างลู่กรีฑา: %s (%s) | ลบ %d ฮีต | ปีการศึกษา ID:%d", 
+          $sportName, 
+          $lbl,
+          $deletedCount,
+          $yearId));
+      
+      flash('ok', 'ล้างฮีตของรายการนี้แล้ว');
     } catch (Throwable $e) {
-      safeRollback($pdo); flash('err', 'ล้างไม่สำเร็จ: ' . $e->getMessage());
+      safeRollback($pdo);
+      
+      // 🔥 LOG: ล้างฮีตไม่สำเร็จ
+      log_activity('ERROR', 'track_heats', $sid ?? null, 
+        sprintf("ล้างลู่กรีฑาไม่สำเร็จ: %s | กีฬา: %s", 
+          $e->getMessage(), 
+          $sportName ?? 'unknown'));
+      
+      flash('err', 'ล้างไม่สำเร็จ: ' . $e->getMessage());
     }
     header('Location: ' . BASE_URL . '/athletics.php'); exit;
   }
+  
   if ($action === 'gen_all') {
-    $ok=0; $fail=[];
+    $ok=0; $fail=[]; $sportNames = [];
     foreach ($sports as $sp) {
       $r = generate_one_heat($pdo, $yearId, $sp);
-      if ($r['ok']) $ok++; else $fail[] = $sp['name'];
+      if ($r['ok']) {
+        $ok++;
+        $sportNames[] = $sp['name'];
+      } else {
+        $fail[] = $sp['name'];
+      }
     }
-    $msg = "สุ่มลู่ทั้งหมดสำเร็จ {$ok} รายการ"; if ($fail) $msg .= " (ผิดพลาด: " . implode(', ', $fail) . ")";
-    flash('ok', $msg); header('Location: ' . BASE_URL . '/athletics.php'); exit;
+    
+    // 🔥 LOG: สุ่มลู่ทั้งหมดสำเร็จ
+    $logDetail = sprintf("สุ่มลู่กรีฑาทั้งหมด: สำเร็จ %d รายการ | กีฬา: [%s]", 
+      $ok, 
+      implode(', ', $sportNames));
+    if ($fail) {
+      $logDetail .= sprintf(" | ล้มเหลว %d รายการ: [%s]", count($fail), implode(', ', $fail));
+    }
+    $logDetail .= " | ปีการศึกษา ID:{$yearId}";
+    log_activity('CREATE', 'track_heats', null, $logDetail);
+    
+    $msg = "สุ่มลู่ทั้งหมดสำเร็จ {$ok} รายการ"; 
+    if ($fail) $msg .= " (ผิดพลาด: " . implode(', ', $fail) . ")";
+    flash('ok', $msg); 
+    header('Location: ' . BASE_URL . '/athletics.php'); exit;
   }
+  
   if ($action === 'clear_all') {
     try {
       if (!$pdo->inTransaction()) $pdo->beginTransaction();
-      foreach ($sports as $sp) { clear_heats($pdo, $yearId, (int)$sp['id']); }
-      safeCommit($pdo); flash('ok', 'ล้างฮีตทั้งหมดแล้ว');
+      
+      $totalDeleted = 0;
+      $sportDetails = [];
+      
+      foreach ($sports as $sp) {
+        // นับจำนวนก่อนลบ
+        $countStmt = $pdo->prepare("SELECT COUNT(*) FROM track_heats WHERE year_id=? AND sport_id=?");
+        $countStmt->execute([$yearId, (int)$sp['id']]);
+        $count = (int)$countStmt->fetchColumn();
+        
+        if ($count > 0) {
+          $lbl = ($sp['participant_type'] === 'ทีม') ? 'ผลัด' : 'เดี่ยว';
+          $sportDetails[] = "{$sp['name']} ({$lbl}, {$count} ฮีต)";
+          $totalDeleted += $count;
+        }
+        
+        clear_heats($pdo, $yearId, (int)$sp['id']);
+      }
+      
+      safeCommit($pdo);
+      
+      // 🔥 LOG: ล้างฮีตทั้งหมดสำเร็จ
+      log_activity('DELETE', 'track_heats', null, 
+        sprintf("ล้างลู่กรีฑาทั้งหมด: ลบทั้งหมด %d ฮีต | กีฬา: [%s] | ปีการศึกษา ID:%d", 
+          $totalDeleted,
+          implode(', ', $sportDetails),
+          $yearId));
+      
+      flash('ok', 'ล้างฮีตทั้งหมดแล้ว');
     } catch (Throwable $e) {
-      safeRollback($pdo); flash('err', 'ล้างทั้งหมดไม่สำเร็จ: ' . $e->getMessage());
+      safeRollback($pdo);
+      
+      // 🔥 LOG: ล้างฮีตทั้งหมดไม่สำเร็จ
+      log_activity('ERROR', 'track_heats', null, 
+        sprintf("ล้างลู่กรีฑาทั้งหมดไม่สำเร็จ: %s | ปีการศึกษา ID:%d", 
+          $e->getMessage(), 
+          $yearId));
+      
+      flash('err', 'ล้างทั้งหมดไม่สำเร็จ: ' . $e->getMessage());
     }
     header('Location: ' . BASE_URL . '/athletics.php'); exit;
   }

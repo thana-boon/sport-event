@@ -57,9 +57,23 @@ if ($action === 'create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
       $st2->execute([$yearId, $catId, $max]);
 
       $pdo->commit();
+      
+      // 🔥 LOG: เพิ่มประเภทกีฬาสำเร็จ
+      log_activity('CREATE', 'sport_categories', $catId, 
+        sprintf("เพิ่มประเภทกีฬา: %s | คำอธิบาย: %s | จำกัด/คน: %s | ปีการศึกษา ID:%d", 
+          $name, 
+          $desc ?: '-', 
+          $max === 0 ? 'ไม่จำกัด' : $max,
+          $yearId));
+      
       $messages[] = 'เพิ่มประเภทกีฬาเรียบร้อย';
     } catch (Throwable $e) {
       $pdo->rollBack();
+      
+      // 🔥 LOG: เพิ่มประเภทกีฬาไม่สำเร็จ
+      log_activity('ERROR', 'sport_categories', null, 
+        sprintf("เพิ่มประเภทกีฬาไม่สำเร็จ: %s | ชื่อ: %s", $e->getMessage(), $name));
+      
       $errors[] = 'เพิ่มไม่สำเร็จ (อาจชื่อซ้ำกัน): '.e($e->getMessage());
     }
   }
@@ -78,6 +92,18 @@ if ($action === 'update' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 
   if (!$errors) {
     try {
+      // ดึงข้อมูลเดิมก่อนแก้ไข
+      $oldStmt = $pdo->prepare("
+        SELECT sc.name, sc.description,
+               COALESCE(cys.max_per_student, sc.max_per_student) AS old_max,
+               COALESCE(cys.is_active, sc.is_active) AS old_active
+        FROM sport_categories sc
+        LEFT JOIN category_year_settings cys ON cys.category_id = sc.id AND cys.year_id = ?
+        WHERE sc.id = ?
+      ");
+      $oldStmt->execute([$yearId, $id]);
+      $oldData = $oldStmt->fetch(PDO::FETCH_ASSOC);
+      
       $pdo->beginTransaction();
 
       // อัปเดตชื่อ/คำอธิบายในตารางแม่ (ค่า default)
@@ -93,9 +119,40 @@ if ($action === 'update' && $_SERVER['REQUEST_METHOD'] === 'POST') {
       $st2->execute([$yearId, $id, $max, $active]);
 
       $pdo->commit();
+      
+      // 🔥 LOG: แก้ไขประเภทกีฬาสำเร็จ
+      if ($oldData) {
+        $changes = [];
+        if ($oldData['name'] !== $name) $changes[] = "ชื่อ: {$oldData['name']} → {$name}";
+        if ($oldData['description'] !== $desc) $changes[] = "คำอธิบาย: " . ($oldData['description'] ?: '-') . " → " . ($desc ?: '-');
+        if ((int)$oldData['old_max'] !== $max) {
+          $oldMaxText = (int)$oldData['old_max'] === 0 ? 'ไม่จำกัด' : (int)$oldData['old_max'];
+          $newMaxText = $max === 0 ? 'ไม่จำกัด' : $max;
+          $changes[] = "จำกัด/คน: {$oldMaxText} → {$newMaxText}";
+        }
+        if ((int)$oldData['old_active'] !== $active) {
+          $changes[] = "สถานะ: " . ((int)$oldData['old_active'] ? 'เปิด' : 'ปิด') . " → " . ($active ? 'เปิด' : 'ปิด');
+        }
+        
+        log_activity('UPDATE', 'sport_categories', $id, 
+          sprintf("แก้ไขประเภทกีฬา: %s | %s | ปีการศึกษา ID:%d", 
+            $name,
+            !empty($changes) ? implode(' | ', $changes) : 'ไม่มีการเปลี่ยนแปลง',
+            $yearId));
+      } else {
+        log_activity('UPDATE', 'sport_categories', $id, 
+          sprintf("แก้ไขประเภทกีฬา ID:%d → %s | ปีการศึกษา ID:%d", $id, $name, $yearId));
+      }
+      
       $messages[] = 'บันทึกค่าประเภทกีฬา (ปีนี้) เรียบร้อย';
     } catch (Throwable $e) {
       $pdo->rollBack();
+      
+      // 🔥 LOG: แก้ไขประเภทกีฬาไม่สำเร็จ
+      log_activity('ERROR', 'sport_categories', $id, 
+        sprintf("แก้ไขประเภทกีฬาไม่สำเร็จ: %s | ID:%d | ชื่อ: %s", 
+          $e->getMessage(), $id, $name));
+      
       $errors[] = 'แก้ไขไม่สำเร็จ: '.e($e->getMessage());
     }
   }
@@ -108,10 +165,31 @@ if ($action === 'delete' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $errors[] = 'ไม่พบรายการที่ต้องการลบ';
   } else {
     try {
+      // ดึงข้อมูลก่อนลบ
+      $oldStmt = $pdo->prepare("SELECT name, description FROM sport_categories WHERE id=?");
+      $oldStmt->execute([$id]);
+      $oldData = $oldStmt->fetch(PDO::FETCH_ASSOC);
+      
       $stmt = $pdo->prepare("DELETE FROM sport_categories WHERE id=?");
       $stmt->execute([$id]);
+      
+      // 🔥 LOG: ลบประเภทกีฬาสำเร็จ
+      if ($oldData) {
+        log_activity('DELETE', 'sport_categories', $id, 
+          sprintf("ลบประเภทกีฬา: %s | คำอธิบาย: %s", 
+            $oldData['name'], 
+            $oldData['description'] ?: '-'));
+      } else {
+        log_activity('DELETE', 'sport_categories', $id, 
+          sprintf("ลบประเภทกีฬา ID:%d", $id));
+      }
+      
       $messages[] = 'ลบประเภทกีฬาเรียบร้อย';
     } catch (Throwable $e) {
+      // 🔥 LOG: ลบประเภทกีฬาไม่สำเร็จ
+      log_activity('ERROR', 'sport_categories', $id, 
+        sprintf("ลบประเภทกีฬาไม่สำเร็จ: %s | ID:%d", $e->getMessage(), $id));
+      
       $errors[] = 'ลบไม่สำเร็จ (อาจมีรายการกีฬาที่ผูกอยู่): '.e($e->getMessage());
     }
   }
@@ -124,6 +202,11 @@ if ($action === 'copy_prev_year' && $_SERVER['REQUEST_METHOD'] === 'POST') {
   } else {
     try {
       $pdo->beginTransaction();
+
+      // นับจำนวนก่อนคัดลอก
+      $countStmt = $pdo->prepare("SELECT COUNT(*) FROM category_year_settings WHERE year_id = ?");
+      $countStmt->execute([$prevYearId]);
+      $totalCopied = $countStmt->fetchColumn();
 
       // 1) คัดลอกจากปีที่แล้ว (ถ้ามีอยู่แล้วให้อัปเดต)
       $sql = "
@@ -145,9 +228,21 @@ if ($action === 'copy_prev_year' && $_SERVER['REQUEST_METHOD'] === 'POST') {
       $pdo->prepare($sql2)->execute([':cur'=>$yearId]);
 
       $pdo->commit();
+      
+      // 🔥 LOG: คัดลอกจากปีที่แล้วสำเร็จ
+      log_activity('COPY', 'category_year_settings', null, 
+        sprintf("คัดลอกค่าประเภทกีฬาจากปีที่แล้ว: %d รายการ | จาก ปี ID:%d → ปี ID:%d", 
+          $totalCopied, $prevYearId, $yearId));
+      
       $messages[] = 'คัดลอกค่าจากปีการศึกษาที่แล้วเรียบร้อย';
     } catch (Throwable $e) {
       $pdo->rollBack();
+      
+      // 🔥 LOG: คัดลอกจากปีที่แล้วไม่สำเร็จ
+      log_activity('ERROR', 'category_year_settings', null, 
+        sprintf("คัดลอกค่าประเภทกีฬาไม่สำเร็จ: %s | จาก ปี ID:%d → ปี ID:%d", 
+          $e->getMessage(), $prevYearId, $yearId));
+      
       $errors[] = 'คัดลอกไม่สำเร็จ: '.e($e->getMessage());
     }
   }

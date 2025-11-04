@@ -22,6 +22,9 @@ if (!$yearId) {
 
 // ===== Handle CSV template download =====
 if (($_GET['action'] ?? '') === 'template') {
+    // 🔥 LOG: ดาวน์โหลด template
+    log_activity('DOWNLOAD', 'students', null, 'ดาวน์โหลด CSV Template สำหรับนำเข้านักเรียน');
+    
     header('Content-Type: text/csv; charset=utf-8');
     header('Content-Disposition: attachment; filename="students_template.csv"');
 
@@ -73,8 +76,20 @@ if ($action === 'create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt = $pdo->prepare("INSERT INTO students(year_id, student_code, first_name, last_name, class_level, class_room, number_in_room, color)
                                    VALUES(?,?,?,?,?,?,?,?)");
             $stmt->execute([$yearId, $student_code, $first_name, $last_name, $class_level, $class_room, $number_in, $color]);
+            $insertedId = $pdo->lastInsertId();
+            
+            // 🔥 LOG: เพิ่มนักเรียนสำเร็จ
+            log_activity('CREATE', 'students', $insertedId, 
+                sprintf("เพิ่มนักเรียน: %s %s %s | รหัส: %s | ชั้น: %s/%d เลขที่: %d | สี: %s", 
+                    $first_name, $last_name, '', $student_code, $class_level, $class_room, $number_in, $color));
+            
             $messages[] = 'เพิ่มนักเรียนเรียบร้อย';
         } catch (Throwable $e) {
+            // 🔥 LOG: เพิ่มนักเรียนไม่สำเร็จ
+            log_activity('ERROR', 'students', null, 
+                sprintf("เพิ่มนักเรียนไม่สำเร็จ: %s | รหัส: %s | ชื่อ: %s %s", 
+                    $e->getMessage(), $student_code, $first_name, $last_name));
+            
             $errors[] = 'เพิ่มไม่สำเร็จ (อาจรหัสนักเรียนซ้ำในปีนี้): '.e($e->getMessage());
         }
     }
@@ -100,12 +115,43 @@ if ($action === 'update' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (!$errors) {
         try {
+            // ดึงข้อมูลเดิมก่อนแก้ไข
+            $oldStmt = $pdo->prepare("SELECT student_code, first_name, last_name, class_level, class_room, number_in_room, color FROM students WHERE id=? AND year_id=?");
+            $oldStmt->execute([$id, $yearId]);
+            $oldData = $oldStmt->fetch(PDO::FETCH_ASSOC);
+            
             $stmt = $pdo->prepare("UPDATE students
                                    SET student_code=?, first_name=?, last_name=?, class_level=?, class_room=?, number_in_room=?, color=?
                                    WHERE id=? AND year_id=?");
             $stmt->execute([$student_code, $first_name, $last_name, $class_level, $class_room, $number_in, $color, $id, $yearId]);
+            
+            // 🔥 LOG: แก้ไขนักเรียนสำเร็จ
+            if ($oldData) {
+                $changes = [];
+                if ($oldData['student_code'] !== $student_code) $changes[] = "รหัส: {$oldData['student_code']} → {$student_code}";
+                if ($oldData['first_name'] !== $first_name) $changes[] = "ชื่อ: {$oldData['first_name']} → {$first_name}";
+                if ($oldData['last_name'] !== $last_name) $changes[] = "นามสกุล: {$oldData['last_name']} → {$last_name}";
+                if ($oldData['class_level'] !== $class_level) $changes[] = "ชั้น: {$oldData['class_level']} → {$class_level}";
+                if ($oldData['class_room'] != $class_room) $changes[] = "ห้อง: {$oldData['class_room']} → {$class_room}";
+                if ($oldData['number_in_room'] != $number_in) $changes[] = "เลขที่: {$oldData['number_in_room']} → {$number_in}";
+                if ($oldData['color'] !== $color) $changes[] = "สี: {$oldData['color']} → {$color}";
+                
+                log_activity('UPDATE', 'students', $id, 
+                    sprintf("แก้ไขนักเรียน ID:%d | %s %s | %s", 
+                        $id, $first_name, $last_name, 
+                        !empty($changes) ? implode(' | ', $changes) : 'ไม่มีการเปลี่ยนแปลง'));
+            } else {
+                log_activity('UPDATE', 'students', $id, 
+                    sprintf("แก้ไขนักเรียน ID:%d → %s %s | รหัส: %s", $id, $first_name, $last_name, $student_code));
+            }
+            
             $messages[] = 'แก้ไขเรียบร้อย';
         } catch (Throwable $e) {
+            // 🔥 LOG: แก้ไขนักเรียนไม่สำเร็จ
+            log_activity('ERROR', 'students', $id, 
+                sprintf("แก้ไขนักเรียนไม่สำเร็จ: %s | ID:%d | รหัส: %s", 
+                    $e->getMessage(), $id, $student_code));
+            
             $errors[] = 'แก้ไขไม่สำเร็จ: '.e($e->getMessage());
         }
     }
@@ -117,10 +163,30 @@ if ($action === 'delete' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         $errors[] = 'ไม่พบรายการ';
     } else {
         try {
+            // ดึงข้อมูลก่อนลบ
+            $oldStmt = $pdo->prepare("SELECT student_code, first_name, last_name, class_level, class_room, number_in_room, color FROM students WHERE id=? AND year_id=?");
+            $oldStmt->execute([$id, $yearId]);
+            $oldData = $oldStmt->fetch(PDO::FETCH_ASSOC);
+            
             $stmt = $pdo->prepare("DELETE FROM students WHERE id=? AND year_id=?");
             $stmt->execute([$id, $yearId]);
+            
+            // 🔥 LOG: ลบนักเรียนสำเร็จ
+            if ($oldData) {
+                log_activity('DELETE', 'students', $id, 
+                    sprintf("ลบนักเรียน: %s %s | รหัส: %s | ชั้น: %s/%d เลขที่: %d | สี: %s", 
+                        $oldData['first_name'], $oldData['last_name'], $oldData['student_code'], 
+                        $oldData['class_level'], $oldData['class_room'], $oldData['number_in_room'], $oldData['color']));
+            } else {
+                log_activity('DELETE', 'students', $id, sprintf("ลบนักเรียน ID:%d", $id));
+            }
+            
             $messages[] = 'ลบเรียบร้อย';
         } catch (Throwable $e) {
+            // 🔥 LOG: ลบนักเรียนไม่สำเร็จ
+            log_activity('ERROR', 'students', $id, 
+                sprintf("ลบนักเรียนไม่สำเร็จ: %s | ID:%d", $e->getMessage(), $id));
+            
             $errors[] = 'ลบไม่สำเร็จ: '.e($e->getMessage());
         }
     }
@@ -131,11 +197,26 @@ if ($action === 'delete_all' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $confirm = trim($_POST['confirm_delete'] ?? '');
     if ($confirm === 'DELETE') {
         try {
+            // นับจำนวนก่อนลบ
+            $countStmt = $pdo->prepare("SELECT COUNT(*) FROM students WHERE year_id=?");
+            $countStmt->execute([$yearId]);
+            $totalBefore = $countStmt->fetchColumn();
+            
             $stmt = $pdo->prepare("DELETE FROM students WHERE year_id=?");
             $stmt->execute([$yearId]);
             $deleted = $stmt->rowCount();
+            
+            // 🔥 LOG: ลบนักเรียนทั้งหมดสำเร็จ
+            log_activity('DELETE', 'students', null, 
+                sprintf("⚠️ ลบนักเรียนทั้งหมด: %d คน | ปีการศึกษา ID:%d", $deleted, $yearId));
+            
             $messages[] = "✅ ลบนักเรียนทั้งหมด {$deleted} คน เรียบร้อย (ปีการศึกษา {$yearId})";
         } catch (Throwable $e) {
+            // 🔥 LOG: ลบนักเรียนทั้งหมดไม่สำเร็จ
+            log_activity('ERROR', 'students', null, 
+                sprintf("ลบนักเรียนทั้งหมดไม่สำเร็จ: %s | ปีการศึกษา ID:%d", 
+                    $e->getMessage(), $yearId));
+            
             $errors[] = 'ลบไม่สำเร็จ: '.e($e->getMessage());
         }
     } else {
@@ -206,9 +287,21 @@ if ($action === 'import_csv' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                         }
                     }
                     $pdo->commit();
+                    
+                    // 🔥 LOG: นำเข้า CSV สำเร็จ
+                    log_activity('IMPORT', 'students', null, 
+                        sprintf("นำเข้านักเรียนจาก CSV: เพิ่มใหม่ %d คน | อัปเดต %d คน | ข้าม %d แถว | ปีการศึกษา ID:%d", 
+                            $inserted, $updated, $skipped, $yearId));
+                    
                     $messages[] = "✅ นำเข้าเสร็จสิ้น: เพิ่มใหม่ {$inserted} แถว, อัปเดต {$updated} แถว, ข้าม {$skipped} แถว";
                 } catch (Throwable $e) {
                     $pdo->rollBack();
+                    
+                    // 🔥 LOG: นำเข้า CSV ไม่สำเร็จ
+                    log_activity('ERROR', 'students', null, 
+                        sprintf("นำเข้า CSV ไม่สำเร็จ: %s | เพิ่มแล้ว: %d | อัปเดตแล้ว: %d", 
+                            $e->getMessage(), $inserted, $updated));
+                    
                     $errors[] = 'นำเข้าไม่สำเร็จ: ' . e($e->getMessage());
                 }
                 fclose($handle);
@@ -218,6 +311,15 @@ if ($action === 'import_csv' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 if ($action === 'export_csv') {
+    // นับจำนวนก่อน export
+    $countStmt = $pdo->prepare("SELECT COUNT(*) FROM students WHERE year_id=?");
+    $countStmt->execute([$yearId]);
+    $totalExport = $countStmt->fetchColumn();
+    
+    // 🔥 LOG: ส่งออก CSV
+    log_activity('EXPORT', 'students', null, 
+        sprintf("ส่งออกนักเรียนเป็น CSV: %d คน | ปีการศึกษา ID:%d", $totalExport, $yearId));
+    
     header('Content-Type: text/csv; charset=utf-8');
     header('Content-Disposition: attachment; filename="students_'.$yearId.'.csv"');
 
@@ -357,7 +459,7 @@ for ($i=1; $i<=6; $i++) { $classOptions[] = "ม.{$i}"; }
             <div class="mb-2">
               <label class="form-label">อัปโหลด CSV (UTF-8)</label>
               <input type="file" class="form-control" name="csv" accept=".csv" required>
-              <div class="form-text">* ใน Excel ให้ “บันทึกเป็น” CSV UTF-8 แล้วอัปโหลด</div>
+              <div class="form-text">* ใน Excel ให้ "บันทึกเป็น" CSV UTF-8 แล้วอัปโหลด</div>
             </div>
             <div class="d-grid">
               <button class="btn btn-success">นำเข้า</button>
