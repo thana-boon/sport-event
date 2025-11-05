@@ -3,7 +3,26 @@
 if (session_status() === PHP_SESSION_NONE) { session_start(); }
 if (!defined('BASE_URL')) { define('BASE_URL', '/sport-event/public'); }
 
+// ✅ เพิ่มการโหลด helpers สำหรับ log_activity
+require_once __DIR__ . '/../../lib/helpers.php';
+
 $staff = $_SESSION['staff'] ?? null;
+
+// ✅ เช็ค session timeout (30 นาที)
+$timeout = 1800; // 30 นาที
+if (!empty($staff)) {
+  if (isset($_SESSION['last_activity']) && (time() - $_SESSION['last_activity']) > $timeout) {
+    // 🔥 LOG: Session timeout
+    log_activity('LOGOUT', 'users', $staff['id'] ?? null, 
+      'ออกจากระบบอัตโนมัติ (session timeout 30 นาที) | Username: ' . ($staff['username'] ?? 'unknown') . ' | สี: ' . ($staff['color'] ?? '-'));
+    
+    session_unset();
+    session_destroy();
+    header('Location: ' . BASE_URL . '/staff/login.php?timeout=1');
+    exit;
+  }
+  $_SESSION['last_activity'] = time();
+}
 
 // ดึงปีการศึกษาที่ Active
 $activeYearBe = null;

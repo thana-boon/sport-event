@@ -7,7 +7,8 @@ if (session_status() === PHP_SESSION_NONE) session_start();
 header('Content-Type: application/json; charset=utf-8');
 
 try {
-  if (empty($_SESSION['referee']) || (($_SESSION['referee']['role'] ?? '') !== 'referee')) {
+  // ✅ อนุญาตทั้ง 'referee' และ 'admin'
+  if (empty($_SESSION['referee']) || !in_array(($_SESSION['referee']['role'] ?? ''), ['referee', 'admin'], true)) {
     throw new Exception('forbidden');
   }
   $pdo = db();
@@ -74,9 +75,10 @@ try {
 
     // 🔥 LOG: บันทึกผลกีฬาสากล
     log_activity('UPDATE', 'referee_results', $sport_id, 
-      sprintf("บันทึกผลกีฬาสากล: %s | %s", 
+      sprintf("บันทึกผลกีฬาสากล: %s | %s | ปี %d", 
         $sportName, 
-        implode(', ', $details)));
+        !empty($details) ? implode(', ', $details) : 'ไม่มีอันดับ',
+        $year_be));
 
     echo json_encode(['ok' => true]);
     exit;
@@ -133,6 +135,7 @@ try {
     }
 
     // อัปเดตสถิติ (ใช้ logic เดียว)
+    $recordUpdated = false;
     if ($best_time !== '') {
       $q = $pdo->prepare("SELECT id, best_time FROM athletics_events WHERE year_id=? AND sport_id=? ORDER BY id DESC LIMIT 1");
       $q->execute([$year_id, $sport_id]);
@@ -144,18 +147,20 @@ try {
         // อัปเดตสถิติ (ไม่เช็คว่าทำลายสถิติหรือไม่ → ให้ผู้ใช้ตัดสินใจเอง)
         $u = $pdo->prepare("UPDATE athletics_events SET best_time=?, best_year_be=?, notes=? WHERE id=?");
         $u->execute([$best_time, ($best_year ?: $year_be), $best_name, $row['id']]);
+        $recordUpdated = true;
       } else {
         // ยังไม่มี → INSERT ใหม่
         $i = $pdo->prepare("INSERT INTO athletics_events (year_id, sport_id, event_code, best_student_id, best_time, best_year_be, notes)
                             VALUES (?,?,?,?,?,?,?)");
         $i->execute([$year_id, $sport_id, '', null, $best_time, ($best_year ?: $year_be), $best_name]);
+        $recordUpdated = true;
       }
     }
 
     // 🔥 LOG: บันทึกผลกรีฑา
     $logDetail = sprintf("บันทึกผลกรีฑา: %s", $sportName);
     if (!empty($laneDetails)) {
-      $logDetail .= " | ผล: " . implode(', ', $laneDetails);
+      $logDetail .= " | ผล: [" . implode(', ', $laneDetails) . "]";
     }
     if ($best_name || $best_time) {
       $logDetail .= sprintf(" | สถิติ: %s เวลา:%s ปี:%s", 
@@ -166,6 +171,7 @@ try {
     if ($recordBreaker) {
       $logDetail .= " | 🔥มีการทำลายสถิติ";
     }
+    $logDetail .= " | ปี {$year_be}";
 
     log_activity('UPDATE', 'track_results', $sport_id, $logDetail);
 
@@ -180,9 +186,18 @@ try {
           if ($sport_id <= 0) throw new Exception('missing sport_id');
 
           // ดึงชื่อกีฬาก่อนลบ
-          $sportStmt = $pdo->prepare("SELECT name FROM sports WHERE id=?");
+          $sportStmt = $pdo->prepare("SELECT name, category_id FROM sports WHERE id=?");
           $sportStmt->execute([$sport_id]);
-          $sportName = $sportStmt->fetchColumn() ?: 'ID:' . $sport_id;
+          $sportData = $sportStmt->fetch(PDO::FETCH_ASSOC);
+          $sportName = $sportData['name'] ?? 'ID:' . $sport_id;
+          
+          // ดึงชื่อหมวด
+          $categoryName = null;
+          if (!empty($sportData['category_id'])) {
+              $catStmt = $pdo->prepare("SELECT name FROM sport_categories WHERE id=?");
+              $catStmt->execute([$sportData['category_id']]);
+              $categoryName = $catStmt->fetchColumn();
+          }
 
           $pdo->beginTransaction();
 
@@ -206,9 +221,22 @@ try {
           $pdo->commit();
 
           // 🔥 LOG: ลบผลสำเร็จ
-          log_activity('DELETE', 'results', $sport_id, 
-            sprintf("ลบผลการแข่งขัน: %s | ลบ track_results: %d แถว | ลบ referee_results: %d แถว", 
-              $sportName, $deletedTrack, $deletedRef));
+          $logDetail = sprintf("ลบผลการแข่งขัน: %s", $sportName);
+          if ($categoryName) {
+              $logDetail .= " | หมวด: {$categoryName}";
+          }
+          if ($deletedTrack > 0) {
+              $logDetail .= " | ลบ track_results: {$deletedTrack} แถว";
+          }
+          if ($deletedRef > 0) {
+              $logDetail .= " | ลบ referee_results: {$deletedRef} แถว";
+          }
+          if ($deletedTrack === 0 && $deletedRef === 0) {
+              $logDetail .= " | ไม่มีผลที่ต้องลบ";
+          }
+          $logDetail .= " | ปี {$year_be}";
+          
+          log_activity('DELETE', 'results', $sport_id, $logDetail);
 
           echo json_encode(['ok'=>true,'deleted'=>true]);
       } catch (Throwable $e) {
@@ -216,7 +244,10 @@ try {
           
           // 🔥 LOG: ลบผลไม่สำเร็จ
           log_activity('ERROR', 'results', $sport_id ?? null, 
-            'ลบผลการแข่งขันไม่สำเร็จ: ' . $e->getMessage() . ' | กีฬา: ' . ($sportName ?? 'unknown'));
+            sprintf("ลบผลการแข่งขันไม่สำเร็จ: %s | กีฬา: %s | ปี %d", 
+              $e->getMessage(), 
+              $sportName ?? 'unknown',
+              $year_be));
           
           echo json_encode(['ok'=>false,'error'=>$e->getMessage()]);
       }
@@ -227,7 +258,7 @@ try {
 } catch (Throwable $e) {
   // 🔥 LOG: Error ทั่วไป
   log_activity('ERROR', 'referee_save', null, 
-    'เกิดข้อผิดพลาดในการบันทึก: ' . $e->getMessage());
+    'เกิดข้อผิดพลาดในการบันทึก (referee): ' . $e->getMessage());
   
   echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
 }

@@ -20,9 +20,18 @@ $pdo    = db();
 $yearId = active_year_id($pdo);
 $yearName = active_year_name($pdo);
 
-// คำนวณจำนวนเหรียญทั้งหมด
+// ========================================
+// ✅ คำนวณจำนวนเหรียญ (ทั้งกีฬาสากล + กรีฑา)
+// ========================================
+
+$totalGold = 0;
+$totalSilver = 0;
+$totalBronze = 0;
+$medalsByCategory = [];
+
+// ✅ ดึงกีฬาทั้งหมด (รวมกรีฑา) → ใช้ participant_type + team_size
 $medalStmt = $pdo->prepare("
-  SELECT s.id, s.name, s.team_size, c.name AS category_name
+  SELECT s.id, s.name, s.participant_type, s.team_size, c.name AS category_name
   FROM sports s
   LEFT JOIN sport_categories c ON c.id = s.category_id
   WHERE s.year_id = ? AND s.is_active = 1
@@ -31,13 +40,15 @@ $medalStmt = $pdo->prepare("
 $medalStmt->execute([$yearId]);
 $allSports = $medalStmt->fetchAll(PDO::FETCH_ASSOC);
 
-$totalGold = 0;
-$totalSilver = 0;
-$totalBronze = 0;
-$medalsByCategory = [];
-
 foreach ($allSports as $sp) {
-  $teamSize = max(1, (int)$sp['team_size']);
+  // ✅ ถ้า participant_type = 'เดี่ยว' → เหรียญ = 1
+  // ✅ ถ้า participant_type = 'ทีม' → เหรียญ = team_size
+  if ($sp['participant_type'] === 'เดี่ยว') {
+    $medalsPerRank = 1;
+  } else {
+    $medalsPerRank = max(1, (int)$sp['team_size']);
+  }
+  
   $catName = $sp['category_name'] ?: 'ไม่ระบุประเภท';
   
   if (!isset($medalsByCategory[$catName])) {
@@ -49,17 +60,19 @@ foreach ($allSports as $sp) {
     ];
   }
   
-  $medalsByCategory[$catName]['gold'] += $teamSize;
-  $medalsByCategory[$catName]['silver'] += $teamSize;
-  $medalsByCategory[$catName]['bronze'] += $teamSize;
+  // แต่ละรายการกีฬาให้ ทอง/เงิน/ทองแดง อย่างละ medalsPerRank เหรียญ
+  $medalsByCategory[$catName]['gold'] += $medalsPerRank;
+  $medalsByCategory[$catName]['silver'] += $medalsPerRank;
+  $medalsByCategory[$catName]['bronze'] += $medalsPerRank;
   $medalsByCategory[$catName]['sports'][] = [
     'name' => $sp['name'],
-    'medals' => $teamSize
+    'team_size' => (int)$sp['team_size'], // รับลงทะเบียน
+    'medals' => $medalsPerRank // ได้เหรียญจริง
   ];
   
-  $totalGold += $teamSize;
-  $totalSilver += $teamSize;
-  $totalBronze += $teamSize;
+  $totalGold += $medalsPerRank;
+  $totalSilver += $medalsPerRank;
+  $totalBronze += $medalsPerRank;
 }
 
 // ------------------------

@@ -5,7 +5,11 @@ if (session_status() === PHP_SESSION_NONE) session_start();
 header('Content-Type: application/json; charset=utf-8');
 
 try {
-  if (empty($_SESSION['referee']) || (($_SESSION['referee']['role'] ?? '') !== 'referee')) throw new Exception('forbidden');
+  // ✅ อนุญาตทั้ง 'referee' และ 'admin'
+  if (empty($_SESSION['referee']) || !in_array(($_SESSION['referee']['role'] ?? ''), ['referee', 'admin'], true)) {
+    throw new Exception('forbidden');
+  }
+  
   $pdo = db();
 
   // Active year
