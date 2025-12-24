@@ -1,10 +1,29 @@
 <?php
 require_once __DIR__ . '/../../config/config.php';
 require_once __DIR__ . '/../../config/db.php';
+require_once __DIR__ . '/../../lib/helpers.php';
+
 if (session_status() === PHP_SESSION_NONE) session_start();
-if (empty($_SESSION['referee']) || (($_SESSION['referee']['role'] ?? '') !== 'referee')) {
-  header('Location: ' . BASE_URL . '/referee/login.php'); exit;
+
+// ✅ อนุญาตทั้ง 'referee' และ 'admin'
+if (empty($_SESSION['referee']) || !in_array(($_SESSION['referee']['role'] ?? ''), ['referee', 'admin'], true)) {
+  header('Location: ' . BASE_URL . '/referee/login.php'); 
+  exit;
 }
+
+// ✅ เช็ค session timeout (30 นาที)
+$timeout = 1800; // 30 นาที
+if (isset($_SESSION['last_activity']) && (time() - $_SESSION['last_activity']) > $timeout) {
+  // 🔥 LOG: Session timeout
+  log_activity('LOGOUT', 'users', $_SESSION['referee']['id'] ?? null, 
+    'ออกจากระบบอัตโนมัติ (session timeout 30 นาที - referee) | Username: ' . ($_SESSION['referee']['username'] ?? 'unknown') . ' | Role: ' . ($_SESSION['referee']['role'] ?? 'unknown'));
+  
+  session_unset();
+  session_destroy();
+  header('Location: ' . BASE_URL . '/referee/login.php?timeout=1');
+  exit;
+}
+$_SESSION['last_activity'] = time();
 ?>
 <!doctype html>
 <html lang="th">
@@ -125,11 +144,15 @@ if (empty($_SESSION['referee']) || (($_SESSION['referee']['role'] ?? '') !== 're
     /* Table */
     .table-responsive {
       border-radius: 1rem;
-      overflow: hidden;
+      overflow-x: auto;
+      overflow-y: hidden;
+      -webkit-overflow-scrolling: touch;
     }
     
     .table {
       margin-bottom: 0;
+      min-width: 900px;
+      white-space: nowrap;
     }
     
     .table thead {

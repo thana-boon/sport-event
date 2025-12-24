@@ -1,5 +1,5 @@
 <?php
-// public/staff/register.php — เวอร์ชัน "ปิดแก้ไขเมื่อ admin ปิดรับลงทะเบียน" (+เตือนเกินเพดานต่อประเภท)
+// public/staff/register.php — เพิ่มการแสดงวงแดงเตือนนักกีฬาที่ลงเกิน
 require_once __DIR__ . '/../../config/config.php';
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../lib/helpers.php';
@@ -41,6 +41,50 @@ if (!$yearId) {
   exit;
 }
 $registrationOpen = registration_open_safe($pdo);
+
+// -------- โหลดข้อมูลจำนวนกีฬาที่ลงทะเบียนของแต่ละนักเรียน + ตรวจสอบเกิน --------
+$studentSportsCount = [];
+$studentOverLimit = []; // เก็บ student_id ที่ลงเกินในหมวดใดหมวดหนึ่ง
+
+$stmt = $pdo->prepare("
+  SELECT 
+    s.id AS student_id,
+    sc.id AS category_id,
+    sc.name AS category_name,
+    COUNT(DISTINCT r.sport_id) AS sport_count,
+    COALESCE(cys.max_per_student, sc.max_per_student) AS max_per_student
+  FROM students s
+  JOIN registrations r ON r.student_id = s.id AND r.year_id = s.year_id
+  JOIN sports sp ON sp.id = r.sport_id
+  JOIN sport_categories sc ON sc.id = sp.category_id
+  LEFT JOIN category_year_settings cys ON cys.category_id = sc.id AND cys.year_id = s.year_id
+  WHERE s.year_id = :y AND s.color = :col
+  GROUP BY s.id, sc.id
+  ORDER BY s.id, sc.id
+");
+$stmt->execute([':y' => $yearId, ':col' => $staffColor]);
+
+while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+  $sid = (int)$row['student_id'];
+  $catId = (int)$row['category_id'];
+  $count = (int)$row['sport_count'];
+  $maxPer = (int)($row['max_per_student'] ?? 0);
+  
+  if (!isset($studentSportsCount[$sid])) {
+    $studentSportsCount[$sid] = [];
+  }
+  
+  $studentSportsCount[$sid][$catId] = [
+    'count' => $count,
+    'max' => $maxPer,
+    'over' => ($maxPer > 0 && $count > $maxPer)
+  ];
+  
+  // ถ้าลงเกินในหมวดไหน ให้เก็บ student_id ไว้
+  if ($maxPer > 0 && $count > $maxPer) {
+    $studentOverLimit[$sid] = true;
+  }
+}
 
 // ตรวจสอบว่าเป็นโหมด "ดูอย่างเดียว" หรือไม่
 $viewMode = isset($_GET['view']) && $_GET['view'] === '1';
@@ -227,7 +271,7 @@ $sportId = (int)($_GET['sport_id'] ?? 0);
 $sportDetail = null; $eligibleStudents = []; $teamSize = 0; $studentMap = [];
 $prefill = []; // รายชื่อที่ลงทะเบียนไว้แล้วของสีนี้
 if ($sportId>0) {
-  $st = $pdo->prepare("SELECT id,name,gender,participant_type,team_size,grade_levels FROM sports WHERE id=? AND year_id=? AND is_active=1");
+  $st = $pdo->prepare("SELECT id,name,gender,participant_type,team_size,grade_levels,category_id FROM sports WHERE id=? AND year_id=? AND is_active=1");
   $st->execute([$sportId,$yearId]);
   $sportDetail = $st->fetch(PDO::FETCH_ASSOC);
   if ($sportDetail) {
@@ -319,7 +363,7 @@ if ($sportId>0) {
   }
 }
 
-// -------- ตารางกีฬา (โหมดรายการ) --------
+// -------- ตารางกีฬา (โหมดรายการ) + ตรวจสอบมีนักกีฬาเกินหรือไม่ --------
 $where = ["s.year_id=:y", "s.is_active=1"];
 $params = [':y'=>$yearId];
 if ($categoryFilter>0) { $where[]="s.category_id=:cid"; $params[':cid']=$categoryFilter; }
@@ -336,6 +380,28 @@ $sqlSports = "
 $stList = $pdo->prepare($sqlSports);
 $stList->execute(array_merge($params, [':color'=>$staffColor]));
 $sports = $stList->fetchAll(PDO::FETCH_ASSOC);
+
+// ตรวจสอบว่าแต่ละกีฬามีนักกีฬาที่ลงเกินหรือไม่
+$sportHasOverLimit = [];
+foreach ($sports as $sp) {
+  $sid = (int)$sp['id'];
+  $qOver = $pdo->prepare("
+    SELECT DISTINCT r.student_id
+    FROM registrations r
+    WHERE r.year_id = :y AND r.sport_id = :sid AND r.color = :col
+  ");
+  $qOver->execute([':y' => $yearId, ':sid' => $sid, ':col' => $staffColor]);
+  $studentIds = $qOver->fetchAll(PDO::FETCH_COLUMN);
+  
+  $hasOver = false;
+  foreach ($studentIds as $stid) {
+    if (isset($studentOverLimit[(int)$stid])) {
+      $hasOver = true;
+      break;
+    }
+  }
+  $sportHasOverLimit[$sid] = $hasOver;
+}
 
 // Color themes
 $colorThemes = [
@@ -373,6 +439,27 @@ include __DIR__ . '/navbar.php';
     box-shadow: 0 8px 16px rgba(0,0,0,0.1);
     border-color: <?php echo $currentTheme['hex']; ?>;
   }
+  .sport-card.has-over-limit {
+    border-color: #dc3545 !important;
+    border-width: 3px !important;
+    box-shadow: 0 0 0 3px rgba(220, 53, 69, 0.1);
+  }
+  .sport-card.has-over-limit:hover {
+    box-shadow: 0 8px 16px rgba(220, 53, 69, 0.3), 0 0 0 3px rgba(220, 53, 69, 0.2);
+  }
+  .over-limit-badge {
+    background: #dc3545;
+    color: white;
+    padding: 0.25rem 0.75rem;
+    border-radius: 1rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+  }
   .form-card {
     background: white;
     border-radius: 1rem;
@@ -386,6 +473,15 @@ include __DIR__ . '/navbar.php';
   .player-input:focus {
     border-color: <?php echo $currentTheme['hex']; ?>;
     box-shadow: 0 0 0 0.2rem <?php echo $currentTheme['hex']; ?>33;
+  }
+  .player-input.over-limit-input {
+    border-color: #dc3545 !important;
+    border-width: 3px !important;
+    box-shadow: 0 0 0 0.2rem rgba(220, 53, 69, 0.25) !important;
+  }
+  .player-input.over-limit-input:focus {
+    border-color: #dc3545 !important;
+    box-shadow: 0 0 0 0.3rem rgba(220, 53, 69, 0.35) !important;
   }
   .status-badge {
     padding: 0.4rem 0.9rem;
@@ -403,6 +499,10 @@ include __DIR__ . '/navbar.php';
     padding: 1rem;
     margin-bottom: 0.5rem;
     border-left: 4px solid <?php echo $currentTheme['hex']; ?>;
+  }
+  .view-only-card.over-limit-card {
+    border-left-color: #dc3545;
+    background: #fff5f5;
   }
   .view-mode-badge {
     background: <?php echo $currentTheme['hex']; ?>33;
@@ -503,12 +603,16 @@ include __DIR__ . '/navbar.php';
           <?php else: ?>
             <div class="mb-3">
               <h6 class="fw-bold mb-3">👥 รายชื่อนักกีฬาที่ลงทะเบียนแล้ว:</h6>
-              <?php foreach ($prefill as $idx => $player): ?>
-                <div class="view-only-card">
+              <?php foreach ($prefill as $idx => $player): 
+                $playerId = (int)$player['id'];
+                $isOverLimit = isset($studentOverLimit[$playerId]);
+                $cardClass = $isOverLimit ? 'view-only-card over-limit-card' : 'view-only-card';
+              ?>
+                <div class="<?php echo $cardClass; ?>">
                   <div class="d-flex align-items-center gap-3">
                     <div class="bg-white rounded-circle d-flex align-items-center justify-content-center" 
-                         style="width: 40px; height: 40px; border: 2px solid <?php echo $currentTheme['hex']; ?>;">
-                      <strong style="color: <?php echo $currentTheme['hex']; ?>;"><?php echo $idx + 1; ?></strong>
+                         style="width: 40px; height: 40px; border: 2px solid <?php echo $isOverLimit ? '#dc3545' : $currentTheme['hex']; ?>;">
+                      <strong style="color: <?php echo $isOverLimit ? '#dc3545' : $currentTheme['hex']; ?>;"><?php echo $idx + 1; ?></strong>
                     </div>
                     <div class="flex-grow-1">
                       <div class="fw-bold"><?php echo e($player['fullname']); ?></div>
@@ -517,9 +621,16 @@ include __DIR__ . '/navbar.php';
                         ชั้น: <?php echo e($player['class_level']); ?>/<?php echo e($player['class_room']); ?> 
                         เลขที่: <?php echo e($player['number_in_room']); ?>
                       </div>
+                      <?php if ($isOverLimit): ?>
+                        <div class="mt-2">
+                          <span class="over-limit-badge">⚠️ ลงเกินจำนวนที่กำหนด</span>
+                        </div>
+                      <?php endif; ?>
                     </div>
                     <div>
-                      <span class="badge" style="background: <?php echo $currentTheme['hex']; ?>;">✓ ลงทะเบียนแล้ว</span>
+                      <span class="badge" style="background: <?php echo $isOverLimit ? '#dc3545' : $currentTheme['hex']; ?>;">
+                        <?php echo $isOverLimit ? '⚠️ เกิน' : '✓ ลงทะเบียนแล้ว'; ?>
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -552,20 +663,30 @@ include __DIR__ . '/navbar.php';
                 for ($i=1;$i<=$teamSize;$i++):
                   $val = $prefillLabels[$i-1] ?? '';
                   $prefillId = $val && isset($studentMap[$val]) ? $studentMap[$val] : 0;
+                  $isOverLimit = $prefillId > 0 && isset($studentOverLimit[$prefillId]);
+                  $inputClass = $isOverLimit ? 'form-control player-input student-input over-limit-input' : 'form-control player-input student-input';
               ?>
                 <div class="col-md-6">
                   <label class="form-label fw-semibold">
                     👤 ผู้เล่นที่ <?php echo $i; ?>
+                    <?php if ($isOverLimit): ?>
+                      <span class="badge bg-danger ms-2">⚠️ ลงเกิน</span>
+                    <?php endif; ?>
                   </label>
                   <input type="text" 
-                         class="form-control player-input student-input" 
+                         class="<?php echo $inputClass; ?>" 
                          list="students_datalist" 
                          placeholder="🔍 พิมพ์ค้นหา รหัส/ชื่อ..." 
                          autocomplete="off" 
                          value="<?php echo e($val); ?>" 
+                         data-student-id="<?php echo (int)$prefillId; ?>"
                          <?php echo !$registrationOpen?'disabled':''; ?>>
                   <input type="hidden" name="student_id_<?php echo $i; ?>" class="student-id-hidden" value="<?php echo (int)$prefillId; ?>">
-                  <div class="form-text">💡 ปล่อยว่าง = ไม่ใช้ช่องนี้</div>
+                  <?php if ($isOverLimit): ?>
+                    <div class="form-text text-danger">⚠️ นักกีฬาคนนี้ลงทะเบียนเกินจำนวนที่กำหนดในบางหมวด</div>
+                  <?php else: ?>
+                    <div class="form-text">💡 ปล่อยว่าง = ไม่ใช้ช่องนี้</div>
+                  <?php endif; ?>
                 </div>
               <?php endfor; ?>
             </div>
@@ -582,22 +703,63 @@ include __DIR__ . '/navbar.php';
 
           <script>
             const regOpen = <?php echo $registrationOpen ? 'true':'false'; ?>;
+            const studentOverLimit = <?php echo json_encode($studentOverLimit); ?>;
+            const studentMap = <?php echo json_encode($studentMap, JSON_UNESCAPED_UNICODE); ?>;
+            
             if (regOpen) {
-              const mapLabelToId = <?php echo json_encode($studentMap, JSON_UNESCAPED_UNICODE); ?>;
               const form = document.getElementById('lineupForm');
+              const inputs = form.querySelectorAll('.student-input');
+              
+              // ตรวจสอบเมื่อเลือกนักกีฬา
+              inputs.forEach(input => {
+                input.addEventListener('input', function() {
+                  const label = this.value.trim();
+                  const studentId = studentMap[label] || 0;
+                  const hiddenInput = this.parentElement.querySelector('.student-id-hidden');
+                  
+                  if (studentId && studentOverLimit[studentId]) {
+                    this.classList.add('over-limit-input');
+                    const labelElement = this.parentElement.querySelector('label');
+                    if (!labelElement.querySelector('.badge')) {
+                      const badge = document.createElement('span');
+                      badge.className = 'badge bg-danger ms-2';
+                      badge.textContent = '⚠️ ลงเกิน';
+                      labelElement.appendChild(badge);
+                    }
+                    const helpText = this.parentElement.querySelector('.form-text');
+                    if (helpText && !helpText.classList.contains('text-danger')) {
+                      helpText.className = 'form-text text-danger';
+                      helpText.textContent = '⚠️ นักกีฬาคนนี้ลงทะเบียนเกินจำนวนที่กำหนดในบางหมวด';
+                    }
+                  } else {
+                    this.classList.remove('over-limit-input');
+                    const labelElement = this.parentElement.querySelector('label');
+                    const badge = labelElement.querySelector('.badge');
+                    if (badge) badge.remove();
+                    const helpText = this.parentElement.querySelector('.form-text');
+                    if (helpText) {
+                      helpText.className = 'form-text';
+                      helpText.textContent = '💡 ปล่อยว่าง = ไม่ใช้ช่องนี้';
+                    }
+                  }
+                  
+                  this.setAttribute('data-student-id', studentId);
+                  hiddenInput.value = studentId || '';
+                });
+              });
+              
               form.addEventListener('submit', function(ev){
-                const inputs = Array.from(form.querySelectorAll('.student-input'));
                 const used = new Set();
-                for (let i=0;i<inputs.length;i++){
-                  const label = inputs[i].value.trim();
-                  const hid = inputs[i].parentElement.querySelector('.student-id-hidden');
-                  if (label === '') { hid.value = ''; continue; }
-                  const id = mapLabelToId[label] || 0;
+                inputs.forEach(input => {
+                  const label = input.value.trim();
+                  const hid = input.parentElement.querySelector('.student-id-hidden');
+                  if (label === '') { hid.value = ''; return; }
+                  const id = studentMap[label] || 0;
                   if (!id) { ev.preventDefault(); alert('❌ กรุณาเลือกจากรายการ หรือปล่อยว่าง'); return; }
                   if (used.has(id)) { ev.preventDefault(); alert('❌ มีชื่อผู้เล่นซ้ำกันในฟอร์ม'); return; }
                   used.add(id);
                   hid.value = id;
-                }
+                });
               });
             }
           </script>
@@ -641,16 +803,24 @@ include __DIR__ . '/navbar.php';
         </div>
       <?php else: 
         foreach($sports as $sp):
+          $sid = (int)$sp['id'];
           $reg = (int)$sp['reg_count'];
           $cap = (int)$sp['team_size'];
           $left = max(0, $cap - $reg);
           $progress = $cap > 0 ? ($reg / $cap) * 100 : 0;
+          $hasOverLimit = $sportHasOverLimit[$sid] ?? false;
+          $cardClass = $hasOverLimit ? 'card sport-card has-over-limit shadow-sm mb-3' : 'card sport-card shadow-sm mb-3';
       ?>
-        <div class="card sport-card shadow-sm mb-3">
+        <div class="<?php echo $cardClass; ?>">
           <div class="card-body">
             <div class="row align-items-center">
               <div class="col-md-6">
-                <h6 class="mb-1 fw-bold"><?php echo e($sp['name']); ?></h6>
+                <div class="d-flex align-items-center gap-2">
+                  <h6 class="mb-1 fw-bold"><?php echo e($sp['name']); ?></h6>
+                  <?php if ($hasOverLimit): ?>
+                    <span class="over-limit-badge">⚠️ มีนักกีฬาลงเกิน</span>
+                  <?php endif; ?>
+                </div>
                 <div class="d-flex flex-wrap gap-2 text-muted small">
                   <span>📂 <?php echo e($sp['category_name']); ?></span>
                   <span>👫 <?php echo e($sp['gender']); ?></span>
@@ -665,7 +835,7 @@ include __DIR__ . '/navbar.php';
                   <div class="flex-grow-1">
                     <div class="progress" style="height: 1.5rem; border-radius: 1rem;">
                       <div class="progress-bar" 
-                           style="width: <?php echo $progress; ?>%; background: <?php echo $currentTheme['hex']; ?>;"
+                           style="width: <?php echo $progress; ?>%; background: <?php echo $hasOverLimit ? '#dc3545' : $currentTheme['hex']; ?>;"
                            role="progressbar">
                         <?php echo $reg; ?>/<?php echo $cap; ?>
                       </div>
@@ -680,13 +850,13 @@ include __DIR__ . '/navbar.php';
                 <?php if ($registrationOpen): ?>
                   <!-- ปุ่มแก้ไข (เปิดลงทะเบียน) -->
                   <a class="btn btn-sm text-white"
-                     style="background: <?php echo $currentTheme['hex']; ?>;"
+                     style="background: <?php echo $hasOverLimit ? '#dc3545' : $currentTheme['hex']; ?>;"
                      href="<?php echo BASE_URL; ?>/staff/register.php?sport_id=<?php echo (int)$sp['id']; ?>">
                      <?php echo $reg>0 ? '✏️ แก้ไข' : '✍️ ลงทะเบียน'; ?>
                   </a>
                 <?php else: ?>
                   <!-- ปุ่มดู (ปิดลงทะเบียน) -->
-                  <a class="btn btn-sm btn-outline-secondary"
+                  <a class="btn btn-sm <?php echo $hasOverLimit ? 'btn-danger' : 'btn-outline-secondary'; ?>"
                      href="<?php echo BASE_URL; ?>/staff/register.php?sport_id=<?php echo (int)$sp['id']; ?>&view=1">
                      👁️ ดูรายชื่อ
                   </a>

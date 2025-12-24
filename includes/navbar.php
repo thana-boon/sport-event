@@ -2,9 +2,6 @@
 /**
  * includes/navbar.php
  * แถบนำทางหลักของระบบ (สำหรับฝั่ง admin + หน้า public ทั้งหมด)
- * - กันฟังก์ชัน e() ซ้ำด้วย function_exists
- * - ใช้ BASE_URL เป็นฐานทุกลิงก์
- * - แสดงชื่อระบบ: "ระบบจัดการกีฬาสี ปีการศึกษา xxxx" (ถ้ามีปีที่ active)
  */
 
 if (session_status() === PHP_SESSION_NONE) { session_start(); }
@@ -21,17 +18,32 @@ if (!function_exists('e')) {
 
 // ----- ค่าพื้นฐาน -----
 if (!defined('BASE_URL')) {
-  // fallback เผื่อยังไม่ได้ define (กรณีมีการ include ไฟล์นี้นอก public/)
   define('BASE_URL', '/sport-event/public');
 }
 
-$current = basename($_SERVER['PHP_SELF']); // ใช้เช็คเมนู active
+$current = basename($_SERVER['PHP_SELF']);
+
+// ✅ เปลี่ยนจาก 900 (15 นาที) เป็น 1800 (30 นาที)
+$timeout = 1800; // 30 นาที
+if (!empty($_SESSION['admin'])) {
+  if (isset($_SESSION['last_activity']) && (time() - $_SESSION['last_activity']) > $timeout) {
+    // 🔥 LOG: Session timeout
+    log_activity('LOGOUT', 'users', $_SESSION['admin']['id'] ?? null, 
+      'ออกจากระบบอัตโนมัติ (session timeout 30 นาที) | Username: ' . ($_SESSION['admin']['username'] ?? 'unknown'));
+    
+    session_unset();
+    session_destroy();
+    header('Location: ' . BASE_URL . '/login.php?timeout=1');
+    exit;
+  }
+  $_SESSION['last_activity'] = time();
+}
 
 // ----- สร้างข้อความชื่อระบบ (ดึงปีการศึกษาที่ Active) -----
 $brandText = 'ระบบจัดการกีฬาสี';
 try {
-  $pdo = db(); // จาก config/db.php
-  $yid = active_year_id($pdo); // จาก lib/helpers.php (คุณมีอยู่แล้ว)
+  $pdo = db();
+  $yid = active_year_id($pdo);
   if ($yid) {
     $stmt = $pdo->prepare("SELECT year_be FROM academic_years WHERE id=? LIMIT 1");
     $stmt->execute([(int)$yid]);
@@ -41,7 +53,7 @@ try {
     }
   }
 } catch (Throwable $th) {
-  // ถ้า DB ยังไม่พร้อม ไม่ต้องทำอะไร ปล่อยชื่อระบบสั้น ๆ ไป
+  // ถ้า DB ยังไม่พร้อม ไม่ต้องทำอะไร
 }
 
 // ----- สร้างตัวช่วย active class -----
@@ -57,7 +69,7 @@ if (!empty($_SESSION['admin'])) {
     ?? 'admin';
 }
 
-// ซ่อนทั้ง navbar เมื่อ URI ชี้ไปยังหน้า login (admin/referee/staff)
+// ซ่อนทั้ง navbar เมื่อ URI ชี้ไปยังหน้า login
 $uri = $_SERVER['REQUEST_URI'] ?? '';
 $hideNav = (strpos($uri, '/login.php') !== false)
          || (strpos($uri, '/referee/login.php') !== false)
@@ -111,18 +123,20 @@ if (!$hideNav):
 
           <!-- กลุ่ม: การลงทะบียน -->
           <li class="nav-item dropdown">
-            <a class="nav-link dropdown-toggle <?php echo in_array($current, ['regis.php','referee.php']) ? 'active' : ''; ?>" href="#" id="godmodeDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+            <a class="nav-link dropdown-toggle <?php echo in_array($current, ['regis.php','referee.php','player.php']) ? 'active' : ''; ?>" href="#" id="godmodeDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
               ⚡ GodMode
             </a>
             <ul class="dropdown-menu" aria-labelledby="godmodeDropdown">
               <li><a class="dropdown-item <?php echo nav_active('regis.php',$current); ?>" href="<?php echo BASE_URL; ?>/regis.php">✍️ จัดการลงทะเบียนนักกีฬา</a></li>
               <li><a class="dropdown-item <?php echo nav_active('referee.php',$current); ?>" href="<?php echo BASE_URL; ?>/referee.php">🎖️ บันทึกผลการแข่งขัน</a></li>
+              <li><hr class="dropdown-divider"></li>
+              <li><a class="dropdown-item <?php echo nav_active('player.php',$current); ?>" href="<?php echo BASE_URL; ?>/player.php">🔄 จัดการการเปลี่ยนตัว</a></li>
             </ul>
           </li>
 
           <!-- เมนูรายงานและ Logs แบบ dropdown -->
           <li class="nav-item dropdown">
-            <a class="nav-link dropdown-toggle <?php echo in_array($current, ['reports.php','reports_booklet.php','reports_athletics.php','logs.php']) ? 'active' : ''; ?>" href="#" id="reportDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+            <a class="nav-link dropdown-toggle <?php echo in_array($current, ['reports.php','reports_booklet.php','reports_athletics.php','logs.php','backup.php']) ? 'active' : ''; ?>" href="#" id="reportDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
               📋 รายงาน
             </a>
             <ul class="dropdown-menu" aria-labelledby="reportDropdown">
@@ -145,6 +159,11 @@ if (!$hideNav):
               <li>
                 <a class="dropdown-item<?php echo $current === 'logs.php' ? ' active' : ''; ?>" href="<?php echo BASE_URL; ?>/logs.php">
                   📜 Activity Logs
+                </a>
+              </li>
+              <li>
+                <a class="dropdown-item<?php echo $current === 'backup.php' ? ' active' : ''; ?>" href="<?php echo BASE_URL; ?>/backup.php">
+                  💾 สำรองข้อมูล
                 </a>
               </li>
             </ul>

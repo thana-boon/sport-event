@@ -30,13 +30,14 @@ function formatGender($gender) {
   return $gender; // ผสม หรืออื่นๆ คงเดิม
 }
 
-// ดึงข้อมูลรายการกรีฑา
+// ✅ เพิ่ม team_size และ participant_type ใน SELECT
 $sql = "
   SELECT
     ae.event_code,
     s.name AS sport_name,
     s.gender,
     s.participant_type,
+    s.team_size,
     s.grade_levels
   FROM athletics_events ae
   LEFT JOIN sports s ON s.id = ae.sport_id
@@ -49,67 +50,100 @@ $stmt = $pdo->prepare($sql);
 $stmt->execute([':y' => $yearId]);
 $events = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// คำนวณเวลาการแข่งขัน
-function calculateSchedule(array $events): array {
-  $schedule = [];
-  $startMorning = strtotime('08:25');
-  $endMorning = strtotime('12:30');
-  $startAfternoon = strtotime('12:50');
-  $intervalMinutes = 5;
-  
-  $currentTime = $startMorning;
-  $isAfternoon = false;
-  
-  foreach ($events as $event) {
-    // ถ้าเกินเวลาเช้า → ข้ามไปบ่าย
-    if (!$isAfternoon && $currentTime > $endMorning) {
-      $currentTime = $startAfternoon;
-      $isAfternoon = true;
+/**
+ * ปรับเวลาให้มีช่วงพักเที่ยง (12:20-12:50)
+ * @param string $time เวลาในรูปแบบ HH:MM
+ * @return string เวลาที่ปรับแล้ว
+ */
+function adjustLunchBreak($time) {
+    // แปลงเวลาเป็นนาที (จากเที่ยงคืน)
+    list($h, $m) = explode(':', $time);
+    $totalMinutes = ((int)$h * 60) + (int)$m;
+    
+    // ช่วงเช้าสิ้นสุด: 12:20 = 740 นาที
+    $morningEnd = 12 * 60 + 20; // 740
+    // ช่วงบ่ายเริ่ม: 12:50 = 770 นาที
+    $afternoonStart = 12 * 60 + 50; // 770
+    
+    // ✅ ถ้าเวลาอยู่ระหว่าง 12:20 - 12:50 → ปรับเป็น 12:50
+    if ($totalMinutes > $morningEnd && $totalMinutes < $afternoonStart) {
+        $totalMinutes = $afternoonStart;
+        $h = floor($totalMinutes / 60);
+        $m = $totalMinutes % 60;
+        return sprintf('%02d:%02d', $h, $m);
     }
     
-    $schedule[] = array_merge($event, [
-      'time' => date('H:i', $currentTime),
-      'session' => $isAfternoon ? 'บ่าย' : 'เช้า'
-    ]);
-    
-    $currentTime += ($intervalMinutes * 60);
-  }
-  
-  return $schedule;
+    return $time;
 }
 
-$schedule = calculateSchedule($events);
+// ========================================
+// ✅ สร้างตารางแข่งขัน (เวลาเริ่มต้น 08:25)
+// ========================================
+
+$schedule = [];
+$startTime = '08:25';
+
+// คำนวณเวลา
+$currentTime = $startTime;
+
+foreach ($events as $event) {
+    // ✅ ใช้ participant_type แทน team_size (ป้องกัน undefined)
+    $participantType = $event['participant_type'] ?? 'เดี่ยว';
+    $duration = ($participantType === 'ทีม') ? 5 : 5; // ทีม 15 นาที, เดี่ยว 5 นาที
+    
+    // ✅ ตรวจสอบและปรับเวลาก่อนเพิ่มรายการ
+    $currentTime = adjustLunchBreak($currentTime);
+    
+    $schedule[] = array_merge($event, [
+        'time' => $currentTime,
+        'duration' => $duration
+    ]);
+    
+    // ✅ คำนวณเวลาถัดไป
+    list($h, $m) = explode(':', $currentTime);
+    $totalMinutes = ((int)$h * 60) + (int)$m + $duration;
+    $h = floor($totalMinutes / 60);
+    $m = $totalMinutes % 60;
+    $nextTime = sprintf('%02d:%02d', $h, $m);
+    
+    // ✅ ปรับเวลาอีกครั้งหลังจากคำนวณแล้ว (กรณีข้ามช่วงพัก)
+    $currentTime = adjustLunchBreak($nextTime);
+}
 
 // ถ้าต้องการดาวน์โหลด PDF
 if (isset($_GET['download'])) {
+  // ✅ กำหนด path ที่ถูกต้อง
+  $basePath = rtrim(str_replace('\\', '/', __DIR__), '/');
+  $fontPath = $basePath . '/assets/fonts/THSarabunNew.ttf';
+  $fontBoldPath = $basePath . '/assets/fonts/THSarabunNew-Bold.ttf';
+  
+  // ✅ แปลง font เป็น base64
+  $fontBase64 = '';
+  $fontBoldBase64 = '';
+  
+  if (file_exists($fontPath)) {
+    $fontBase64 = base64_encode(file_get_contents($fontPath));
+  }
+  
+  if (file_exists($fontBoldPath)) {
+    $fontBoldBase64 = base64_encode(file_get_contents($fontBoldPath));
+  }
+  
   $options = new Options();
   $options->set('isHtml5ParserEnabled', true);
   $options->set('isRemoteEnabled', true);
-  $options->set('defaultFont', 'sarabun');
+  $options->set('defaultFont', 'THSarabunNew');
+  $options->set('isFontSubsettingEnabled', true);
   
   $dompdf = new Dompdf($options);
   
-  // โหลด logo จากตำแหน่งที่ถูกต้อง
+  // โหลด logo
   $logoPath = __DIR__ . '/uploads/logo/logo_year_' . $yearId . '_*.png';
   $logoFiles = glob($logoPath);
   $logoData = '';
   
   if (!empty($logoFiles) && file_exists($logoFiles[0])) {
     $logoData = 'data:image/png;base64,' . base64_encode(file_get_contents($logoFiles[0]));
-  } else {
-    // ลองหาตำแหน่งอื่น
-    $altPaths = [
-      __DIR__ . '/../public/uploads/logo/logo_year_' . $yearId . '_*.png',
-      __DIR__ . '/uploads/logo/*.png',
-      __DIR__ . '/../assets/logo.png'
-    ];
-    foreach ($altPaths as $pattern) {
-      $files = glob($pattern);
-      if (!empty($files) && file_exists($files[0])) {
-        $logoData = 'data:image/png;base64,' . base64_encode(file_get_contents($files[0]));
-        break;
-      }
-    }
   }
   
   // สร้าง HTML
@@ -120,29 +154,35 @@ if (isset($_GET['download'])) {
   <head>
     <meta charset="utf-8">
     <style>
+      <?php if ($fontBase64): ?>
       @font-face {
-        font-family: 'sarabun';
+        font-family: 'THSarabunNew';
         font-style: normal;
         font-weight: normal;
-        src: url('<?= __DIR__ ?>/../fonts/THSarabunNew.ttf') format('truetype');
+        src: url(data:font/truetype;charset=utf-8;base64,<?= $fontBase64 ?>) format('truetype');
       }
+      <?php endif; ?>
+      
+      <?php if ($fontBoldBase64): ?>
       @font-face {
-        font-family: 'sarabun';
+        font-family: 'THSarabunNew';
         font-style: normal;
         font-weight: bold;
-        src: url('<?= __DIR__ ?>/../fonts/THSarabunNew-Bold.ttf') format('truetype');
+        src: url(data:font/truetype;charset=utf-8;base64,<?= $fontBoldBase64 ?>) format('truetype');
       }
+      <?php endif; ?>
+      
       * {
         margin: 0;
         padding: 0;
         box-sizing: border-box;
       }
       body {
-        font-family: 'sarabun', sans-serif;
-        font-size: 14pt;
+        font-family: 'THSarabunNew', 'DejaVu Sans', sans-serif;
+        font-size: 16pt;
         margin: 0;
         padding: 15px;
-        line-height: 1.2;
+        line-height: 1.3;
       }
       .header {
         text-align: center;
@@ -155,47 +195,40 @@ if (isset($_GET['download'])) {
         margin: 0 auto 5px auto;
       }
       .title {
-        font-size: 14pt;
+        font-size: 18pt;
         font-weight: bold;
-        margin: 2px 0;
-        line-height: 1.1;
+        margin: 3px 0;
+        line-height: 1.2;
       }
       .subtitle {
-        font-size: 12pt;
-        margin: 2px 0;
-        line-height: 1.1;
+        font-size: 16pt;
+        margin: 3px 0;
+        line-height: 1.2;
       }
       table {
         width: 100%;
         border-collapse: collapse;
-        margin-top: 6px;
+        margin-top: 8px;
       }
       th, td {
         border: 1px solid #000;
-        padding: 3px 5px;
+        padding: 4px 6px;
         text-align: center;
-        font-size: 12pt;
-        line-height: 1.1;
+        font-size: 15pt;
+        line-height: 1.2;
       }
       th {
         background-color: #ddd;
         font-weight: bold;
-        font-size: 12pt;
-      }
-      .morning {
-        background-color: #fff3cd;
-      }
-      .afternoon {
-        background-color: #d1ecf1;
+        font-size: 16pt;
       }
       .event-code {
         font-weight: bold;
-        font-size: 13pt;
+        font-size: 16pt;
       }
-      .session-row {
-        font-weight: bold;
-        font-size: 12pt;
-        padding: 4px;
+      .text-left {
+        text-align: left;
+        padding-left: 8px;
       }
     </style>
   </head>
@@ -219,23 +252,11 @@ if (isset($_GET['download'])) {
         </tr>
       </thead>
       <tbody>
-        <?php 
-        $currentSession = '';
-        foreach ($schedule as $item): 
-          // แสดง session divider
-          if ($currentSession !== $item['session']) {
-            $currentSession = $item['session'];
-            $bgClass = $currentSession === 'เช้า' ? 'morning' : 'afternoon';
-            echo '<tr class="' . $bgClass . '">';
-            echo '<td colspan="5" class="session-row">';
-            echo 'ช่วง' . htmlspecialchars($currentSession, ENT_QUOTES, 'UTF-8');
-            echo '</td></tr>';
-          }
-        ?>
+        <?php foreach ($schedule as $item): ?>
         <tr>
           <td class="event-code"><?= htmlspecialchars($item['event_code'] ?: '-', ENT_QUOTES, 'UTF-8') ?></td>
           <td><?= htmlspecialchars($item['time'], ENT_QUOTES, 'UTF-8') ?> น.</td>
-          <td style="text-align: left; padding-left: 8px;"><?= htmlspecialchars($item['sport_name'] ?: '-', ENT_QUOTES, 'UTF-8') ?></td>
+          <td class="text-left"><?= htmlspecialchars($item['sport_name'] ?: '-', ENT_QUOTES, 'UTF-8') ?></td>
           <td><?= htmlspecialchars($item['grade_levels'] ?: '-', ENT_QUOTES, 'UTF-8') ?></td>
           <td><?= htmlspecialchars(formatGender($item['gender'] ?: '-'), ENT_QUOTES, 'UTF-8') ?></td>
         </tr>
@@ -255,7 +276,7 @@ if (isset($_GET['download'])) {
   <?php
   $html = ob_get_clean();
   
-  $dompdf->loadHtml($html);
+  $dompdf->loadHtml($html, 'UTF-8');
   $dompdf->setPaper('A4', 'portrait');
   $dompdf->render();
   
@@ -274,21 +295,6 @@ include __DIR__ . '/../includes/navbar.php';
     background: white;
     border-radius: 1rem;
     box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-  }
-  .session-badge {
-    padding: 0.5rem 1rem;
-    border-radius: 0.5rem;
-    font-weight: 600;
-    display: inline-block;
-    margin: 1rem 0;
-  }
-  .morning-badge {
-    background: #fff3cd;
-    color: #856404;
-  }
-  .afternoon-badge {
-    background: #d1ecf1;
-    color: #0c5460;
   }
 </style>
 
@@ -327,21 +333,7 @@ include __DIR__ . '/../includes/navbar.php';
             </tr>
           </thead>
           <tbody>
-            <?php 
-            $currentSession = '';
-            foreach ($schedule as $item): 
-              if ($currentSession !== $item['session']) {
-                $currentSession = $item['session'];
-                $badgeClass = $currentSession === 'เช้า' ? 'morning-badge' : 'afternoon-badge';
-            ?>
-            <tr>
-              <td colspan="5" class="text-center">
-                <span class="session-badge <?= $badgeClass ?>">
-                  ⏰ ช่วง<?= htmlspecialchars($currentSession, ENT_QUOTES, 'UTF-8') ?>
-                </span>
-              </td>
-            </tr>
-            <?php } ?>
+            <?php foreach ($schedule as $item): ?>
             <tr>
               <td class="text-center">
                 <strong><?= htmlspecialchars($item['event_code'] ?: '-', ENT_QUOTES, 'UTF-8') ?></strong>

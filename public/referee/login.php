@@ -27,14 +27,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $ok = false;
     if ($user && (int)$user['is_active'] === 1) {
       if (password_verify($p, $user['password_hash'])) {
-        if (($user['role'] ?? '') === 'referee') {
+        // ✅ อนุญาตทั้ง 'referee' และ 'admin'
+        if (in_array($user['role'] ?? '', ['referee', 'admin'], true)) {
           $ok = true;
         } else {
-          // 🔥 LOG: พยายาม login ด้วย role ที่ไม่ใช่ referee
+          // 🔥 LOG: พยายาม login ด้วย role ที่ไม่ใช่ referee/admin
           log_activity('LOGIN_DENIED', 'users', $user['id'], 
-            'พยายามเข้าสู่ระบบด้วยบัญชีที่ไม่ใช่ referee | Username: ' . $u . ' | Role: ' . ($user['role'] ?? 'unknown'));
+            'พยายามเข้าสู่ระบบด้วยบัญชีที่ไม่ได้รับสิทธิ์ (referee) | Username: ' . $u . ' | Role: ' . ($user['role'] ?? 'unknown'));
           
-          $err = 'บัญชีนี้ไม่ได้รับสิทธิ์ผู้ตัดสิน (role ต้องเป็น referee)';
+          $err = 'บัญชีนี้ไม่ได้รับสิทธิ์ผู้ตัดสิน (role ต้องเป็น referee หรือ admin)';
         }
       } else {
         // 🔥 LOG: รหัสผ่านผิด
@@ -62,12 +63,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'id' => (int)$user['id'],
         'username' => $user['username'],
         'name' => $user['display_name'] ?: $user['username'],
-        'role' => 'referee'
+        'role' => $user['role'] // เก็บ role จริง (referee หรือ admin)
       ];
       
       // 🔥 LOG: Login สำเร็จ
       log_activity('LOGIN', 'users', $user['id'], 
-        'เข้าสู่ระบบสำเร็จ (referee) | Display: ' . ($user['display_name'] ?: $user['username']));
+        'เข้าสู่ระบบสำเร็จ (referee) | Display: ' . ($user['display_name'] ?: $user['username']) . ' | Role: ' . $user['role']);
       
       header('Location: ' . BASE_URL . '/referee/index.php');
       exit;

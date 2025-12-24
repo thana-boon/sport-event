@@ -1,5 +1,5 @@
 <?php
-// Export สูจิบัตรกรีฑา (A4 แนวตั้ง) — รองรับทีม: แสดงครบตาม team_size ต่อ 1 ลู่
+// Export สูจิบัตรกรีฑา (A4 แนวตั้ง) — แก้: วิ่งเดี่ยว 1 ลู่ = 1 คน, ผลัดใส่ได้หลายคน
 
 if (session_status() === PHP_SESSION_NONE) { session_start(); }
 
@@ -54,7 +54,7 @@ $getHeats = function(PDO $pdo, int $yearId, int $sportId){
   return $q->fetchAll(PDO::FETCH_ASSOC);
 };
 
-// lane assignments (เฉพาะข้อมูล lane/สี + ผูกทะเบียนถ้ามี)
+// lane assignments
 $getLanesRaw = function(PDO $pdo, int $heatId){
   $sql = "
     SELECT la.lane_no, la.color, la.registration_id,
@@ -71,7 +71,7 @@ $getLanesRaw = function(PDO $pdo, int $heatId){
   $out=[]; foreach($rows as $r){ $out[(int)$r['lane_no']]=$r; } return $out;
 };
 
-// pool: รายชื่อผู้ลงทะเบียนตาม "สี" ของกีฬานี้ (เพื่อเติมให้ครบ team_size)
+// pool: รายชื่อผู้ลงทะเบียนตาม "สี" ของกีฬานี้
 $getRegPools = function(PDO $pdo, int $yearId, int $sportId){
   $sql="
     SELECT r.id AS reg_id, r.color,
@@ -124,10 +124,8 @@ function formatTime($seconds) {
   $sec = (float)$seconds;
   
   if ($sec < 60) {
-    // น้อยกว่า 60 วินาที → แสดงเป็นวินาที
     return number_format($sec, 2, '.', '') . ' วินาที';
   } else {
-    // 60 วินาทีขึ้นไป → แปลงเป็นนาที:วินาที
     $minutes = floor($sec / 60);
     $remainSec = $sec - ($minutes * 60);
     return $minutes . ':' . number_format($remainSec, 2, '.', '') . ' นาที';
@@ -144,7 +142,6 @@ ob_start();
   @font-face { font-family:'THSarabunNew'; src:url('assets/fonts/THSarabunNew.ttf') format('truetype'); }
   @font-face { font-family:'THSarabunNew'; src:url('assets/fonts/THSarabunNew-Bold.ttf') format('truetype'); font-weight:bold; }
 
-  /* ขนาดตัวอักษรหลัก */
   body{ font-family:'THSarabunNew', DejaVu Sans, sans-serif; font-size:14pt; line-height:1; color:#222; }
 
   .header{ text-align:center; margin-bottom:6px; }
@@ -157,26 +154,24 @@ ob_start();
   .muted{ color:#666; font-size:12pt; display:inline-block; vertical-align:middle; margin-left:8px; }
   .best-stat{ color:#000; font-weight:700; font-size:14pt; display:inline-block; vertical-align:middle; margin-left:8px; }
 
-  /* ตาราง: ปรับให้ช่องสูงใกล้เคียงตัวอักษรที่สุด */
   table{ width:100%; border-collapse:collapse; font-size:14pt; }
   thead th{ background:#f6f6f6; font-weight:700; text-align:center; padding:0.08em 0.18em; }
   th, td{
     border:1px solid #000;
-    padding:0.08em 0.18em;    /* very small padding -> ชิดตัวอักษร */
+    padding:0.08em 0.18em;
     vertical-align:middle;
-    line-height:1;            /* ทำให้ความสูงสัมพันธ์กับ font-size */
-    height:1.05em;           /* ให้แถวสูงเท่ากับขนาดตัวอักษร (เล็กน้อยเผื่อเส้น) */
+    line-height:1;
+    height:1.05em;
     font-size:14pt;
   }
 
-  /* แถบสี: เล็กลงให้ไม่กินพื้นที่แนวตั้งมาก */
   .color-badge{
     display:inline-block;
     padding:0.06em 0.45em;
     border-radius:5px;
     color:#ffffff;
     font-weight:700;
-    font-size:12pt;   /* เล็กกว่าตัวอักษรหลักเล็กน้อย */
+    font-size:12pt;
     line-height:1;
     min-width:30px;
     text-align:center;
@@ -190,9 +185,6 @@ ob_start();
   .pos-col{ width:54px; text-align:center; }
   .time-col{ width:70px; text-align:center; }
   .name-col{ width:auto; }
-
-  /* บรรทัดย่อย: ถ้ามีหลายคนในลู่ ให้ใช้บรรทัดชิดกัน */
-  .name-col.small { font-size:14pt; line-height:1; }
 
   .page-break{ page-break-after:always; }
   .small{ font-size:12pt; }
@@ -209,9 +201,13 @@ ob_start();
   <?php $cnt=0;
   foreach($evs as $ev):
     $cnt++;
+    $participantType = $ev['participant_type'] ?? 'เดี่ยว';
+    $isRelay = ($participantType === 'ทีม'); // ผลัด = ทีม
     $teamSize = max(1, (int)($ev['team_size'] ?? 1));
+    
     $heats = $getHeats($pdo,$yearId,(int)$ev['sport_id']);
     $pools = $getRegPools($pdo,$yearId,(int)$ev['sport_id']);
+    
     $title = ($ev['event_code']? htmlspecialchars($ev['event_code']) . ' — ' : '') . htmlspecialchars($ev['sport_name'] ?? '-');
     $subtitle = htmlspecialchars(($ev['gender'] ?? '') . ' • ' . ($ev['participant_type'] ?? '') . ' • ' . ($ev['grade_levels'] ?? ''));
     $best = $bestText($ev);
@@ -249,81 +245,76 @@ ob_start();
           $color = $row['color'] ?? '';
           $bg = $colorMap[$color] ?? '#999';
 
-          // เก็บรายชื่อของลู่นี้หลายคนถ้าเป็นทีม
-          $members = [];
-
-          // 1) ถ้าลู่นี้มี registration_id แล้ว → ใส่คนนั้นก่อน
-          if ($row && !empty($row['first_name'])) {
-            $members[] = [
-              'first_name'=>$row['first_name'],
-              'last_name'=>$row['last_name'],
-              'class_level'=>$row['class_level'],
-              'class_room'=>$row['class_room'],
-              'number_in_room'=>$row['number_in_room'],
-            ];
-          }
-
-          // 2) ถ้าต้องการมากกว่า 1 คน (ทีม) → เติมจาก pool สีเดียวกัน ให้ครบ team_size
-          $need = $teamSize - count($members);
-          if ($need > 0 && $color !== '' && !empty($pools[$color])) {
-            while($need > 0 && !empty($pools[$color])) {
-              $pick = array_shift($pools[$color]);
-              // กันซ้ำบุคคลเดียวกับข้อ 1)
-              if ($row && !empty($row['first_name']) &&
-                  $pick['first_name']===$row['first_name'] &&
-                  $pick['last_name']===$row['last_name']) {
-                continue;
-              }
-              $members[] = [
-                'first_name'=>$pick['first_name'],
-                'last_name'=>$pick['last_name'],
-                'class_level'=>$pick['class_level'],
-                'class_room'=>$pick['class_room'],
-                'number_in_room'=>$pick['number_in_room'],
-              ];
-              $need--;
-            }
-          }
-
-          // ทำข้อความหลายบรรทัด — แยก "ชื่อ", "ชั้น", "เลขที่" คนละคอลัมน์
           $nameCell = $classCell = $noCell = '&nbsp;';
 
-          if (count($members) > 0) {
-            $nameLines  = [];
-            $classLines = [];
-            $noLines    = [];
-
-            foreach ($members as $m) {
-              // ชื่อ
-              $nameLines[] = htmlspecialchars(
-                trim(($m['first_name'] ?? '') . ' ' . ($m['last_name'] ?? '')),
-                ENT_QUOTES, 'UTF-8'
-              );
-
-              // ชั้น (เช่น ป3/2)
-              $cls = trim(
-                (string)($m['class_level'] ?? '') .
-                (($m['class_room'] ?? '') !== '' ? '/' . $m['class_room'] : '')
-              );
-              $classLines[] = $cls !== '' ? htmlspecialchars($cls, ENT_QUOTES, 'UTF-8') : '&nbsp;';
-
-              // เลขที่
-              $no  = trim((string)($m['number_in_room'] ?? ''));
-              $noLines[] = $no !== '' ? htmlspecialchars($no, ENT_QUOTES, 'UTF-8') : '&nbsp;';
+          if ($isRelay) {
+            // วิ่งผลัด: แสดงหลายคนในลู่เดียว
+            $members = [];
+            
+            if ($row && !empty($row['first_name'])) {
+              $members[] = [
+                'first_name'=>$row['first_name'],
+                'last_name'=>$row['last_name'],
+                'class_level'=>$row['class_level'],
+                'class_room'=>$row['class_room'],
+                'number_in_room'=>$row['number_in_room'],
+              ];
             }
 
-            $nameCell  = implode('<br>', $nameLines);
-            $classCell = implode('<br>', $classLines);
-            $noCell    = implode('<br>', $noLines);
-          }
+            $need = $teamSize - count($members);
+            if ($need > 0 && $color !== '' && !empty($pools[$color])) {
+              while($need > 0 && !empty($pools[$color])) {
+                $pick = array_shift($pools[$color]);
+                if ($row && !empty($row['first_name']) &&
+                    $pick['first_name']===$row['first_name'] &&
+                    $pick['last_name']===$row['last_name']) {
+                  continue;
+                }
+                $members[] = [
+                  'first_name'=>$pick['first_name'],
+                  'last_name'=>$pick['last_name'],
+                  'class_level'=>$pick['class_level'],
+                  'class_room'=>$pick['class_room'],
+                  'number_in_room'=>$pick['number_in_room'],
+                ];
+                $need--;
+              }
+            }
 
+            if (count($members) > 0) {
+              $nameLines = $classLines = $noLines = [];
+              foreach ($members as $m) {
+                $nameLines[] = htmlspecialchars(trim(($m['first_name'] ?? '') . ' ' . ($m['last_name'] ?? '')), ENT_QUOTES, 'UTF-8');
+                $cls = trim((string)($m['class_level'] ?? '') . (($m['class_room'] ?? '') !== '' ? '/' . $m['class_room'] : ''));
+                $classLines[] = $cls !== '' ? htmlspecialchars($cls, ENT_QUOTES, 'UTF-8') : '&nbsp;';
+                $no = trim((string)($m['number_in_room'] ?? ''));
+                $noLines[] = $no !== '' ? htmlspecialchars($no, ENT_QUOTES, 'UTF-8') : '&nbsp;';
+              }
+              $nameCell = implode('<br>', $nameLines);
+              $classCell = implode('<br>', $classLines);
+              $noCell = implode('<br>', $noLines);
+            }
+            
+          } else {
+            // วิ่งเดี่ยว: 1 ลู่ = 1 คน
+            if ($color !== '' && !empty($pools[$color])) {
+              $pick = array_shift($pools[$color]);
+              if ($pick) {
+                $nameCell = htmlspecialchars(trim(($pick['first_name'] ?? '') . ' ' . ($pick['last_name'] ?? '')), ENT_QUOTES, 'UTF-8');
+                $cls = trim((string)($pick['class_level'] ?? '') . (($pick['class_room'] ?? '') !== '' ? '/' . $pick['class_room'] : ''));
+                $classCell = $cls !== '' ? htmlspecialchars($cls, ENT_QUOTES, 'UTF-8') : '&nbsp;';
+                $no = trim((string)($pick['number_in_room'] ?? ''));
+                $noCell = $no !== '' ? htmlspecialchars($no, ENT_QUOTES, 'UTF-8') : '&nbsp;';
+              }
+            }
+          }
         ?>
           <tr>
             <td class="lane-col"><?=$lane?></td>
             <td class="color-col">
               <?= $color ? '<div class="color-badge" style="background:'.htmlspecialchars($bg,ENT_QUOTES,'UTF-8').'">'.htmlspecialchars($color,ENT_QUOTES,'UTF-8').'</div>' : '' ?>
             </td>
-            <td class="name-col small"><?=$nameCell?></td>
+            <td class="name-col"><?=$nameCell?></td>
             <td class="class-col"><?=$classCell?></td>
             <td class="no-col"><?=$noCell?></td>
             <td class="pos-col">&nbsp;</td>
@@ -335,7 +326,13 @@ ob_start();
     <?php endforeach; endif; ?>
   </div>
 
-  <?php if($cnt%3===0): ?><div class="page-break"></div><?php endif; ?>
+  <?php 
+    // ขึ้นหน้าใหม่ทุก 5 รายการ หรือปรับตามความเหมาะสม
+    if($cnt%5===0 && $cnt < count($evs)): 
+  ?>
+    <div class="page-break"></div>
+  <?php endif; ?>
+  
   <?php endforeach; ?>
 </body></html>
 <?php

@@ -62,7 +62,8 @@ function generate_for_sport(PDO $pdo, int $yearId, array $sport): array {
     $ins = $pdo->prepare("INSERT INTO match_pairs
       (year_id, sport_id, round_name, round_no, match_no, match_date, match_time, venue,
        side_a_label, side_a_color, side_b_label, side_b_color, winner, score_a, score_b, status, notes, created_at)
-      VALUES (?, ?, 'รอบคัดเลือก', 1, ?, NULL, NULL, NULL, ?, ?, ?, ?, NULL, NULL, NULL, 'pending', NULL, NOW())");
+      VALUES (?, ?, 'รอบคัดเลือก', 1, ?, NULL, NULL, NULL, ?, ?, ?, ?, NULL, NULL, NULL, 'scheduled', NULL, NOW())");
+      //                                                                                                     ^^^^^^^^^ เปลี่ยนจาก 'pending' เป็น 'scheduled'
 
     // สุ่มสีก่อนสร้างคู่ เพื่อให้ไม่ออกเหมือนเดิมตลอด
     $colors = COLORS;
@@ -77,7 +78,7 @@ function generate_for_sport(PDO $pdo, int $yearId, array $sport): array {
     $matchDetails = [];
     foreach ($pairs as $pair) {
       [$c1, $c2] = $pair;
-      // สลับฝั่งแบบสุ่มเพื่อเพิ่มความหลากหลาย
+      // สลับฝ่ายแบบสุ่มเพื่อเพิ่มความหลากหลาย
       if (random_int(0,1) === 1) { [$c1, $c2] = [$c2, $c1]; }
       $ins->execute([$yearId,(int)$sport['id'],$mno++,"สี$c1",$c1,"สี$c2",$c2]);
       $matchDetails[] = "สี{$c1} vs สี{$c2}";
@@ -272,6 +273,17 @@ include __DIR__ . '/../includes/header.php';
 include __DIR__ . '/../includes/navbar.php';
 $ok=flash('ok'); $err=flash('err');
 ?>
+
+<!-- เพิ่ม SweetAlert2 -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+<style>
+  .swal2-popup {
+    font-family: 'Kanit', sans-serif;
+  }
+</style>
+
 <main class="container py-4">
 
   <!-- ฟิลเตอร์แบบกระชับ (GET) -->
@@ -310,20 +322,43 @@ $ok=flash('ok'); $err=flash('err');
     </div>
   </form>
 
-  <!-- ปุ่ม POST แยกฟอร์ม (ไม่ซ้อนกับฟอร์ม GET) -->
+  <!-- ปุ่ม POST แยกฟอร์ม (ใช้ onclick แทน onsubmit) -->
   <div class="d-flex gap-2 justify-content-end mb-3">
-    <form method="post" onsubmit="return confirm('สุ่มรอบคัดเลือกทั้งหมดของรายการที่กรองอยู่? ของเดิมจะถูกล้าง');" class="m-0">
+    <form method="post" id="genAllForm" class="m-0">
       <input type="hidden" name="action" value="gen_all">
-      <button class="btn btn-success btn-sm">สุ่มทั้งหมด</button>
+      <button type="button" class="btn btn-success btn-sm" onclick="confirmGenAll()">สุ่มทั้งหมด</button>
     </form>
-    <form method="post" onsubmit="return confirm('ล้างคู่ทั้งหมดของรายการที่กรองอยู่?');" class="m-0">
+    <form method="post" id="clearAllForm" class="m-0">
       <input type="hidden" name="action" value="clear_all">
-      <button class="btn btn-outline-danger btn-sm">ล้างทั้งหมด</button>
+      <button type="button" class="btn btn-outline-danger btn-sm" onclick="confirmClearAll()">ล้างทั้งหมด</button>
     </form>
   </div>
 
-  <?php if($ok): ?><div class="alert alert-success py-2"><?php echo e($ok); ?></div><?php endif; ?>
-  <?php if($err): ?><div class="alert alert-danger py-2"><?php echo e($err); ?></div><?php endif; ?>
+  <?php if($ok): ?>
+    <script>
+      Swal.fire({
+        icon: 'success',
+        title: 'สำเร็จ!',
+        text: '<?php echo addslashes($ok); ?>',
+        confirmButtonText: 'ตกลง',
+        confirmButtonColor: '#0d6efd',
+        timer: 3000,
+        timerProgressBar: true
+      });
+    </script>
+  <?php endif; ?>
+  
+  <?php if($err): ?>
+    <script>
+      Swal.fire({
+        icon: 'error',
+        title: 'เกิดข้อผิดพลาด!',
+        text: '<?php echo addslashes($err); ?>',
+        confirmButtonText: 'ตรวจสอบ',
+        confirmButtonColor: '#dc3545'
+      });
+    </script>
+  <?php endif; ?>
 
   <div class="card border-0 shadow-sm rounded-4">
     <div class="card-body table-responsive">
@@ -348,15 +383,15 @@ $ok=flash('ok'); $err=flash('err');
               <td class="text-end">
                 <div class="btn-group">
                   <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#viewModal<?php echo $sid; ?>" <?php echo $cnt? '':'disabled'; ?>>ดู</button>
-                  <form method="post" class="d-inline">
+                  <form method="post" class="d-inline" id="genForm<?php echo $sid; ?>">
                     <input type="hidden" name="action" value="gen_one">
                     <input type="hidden" name="sport_id" value="<?php echo $sid; ?>">
-                    <button class="btn btn-sm btn-primary">สุ่ม</button>
+                    <button type="button" class="btn btn-sm btn-primary" onclick="confirmGenOne(<?php echo $sid; ?>, '<?php echo addslashes($s['name']); ?>')">สุ่ม</button>
                   </form>
-                  <form method="post" class="d-inline" onsubmit="return confirm('ล้างคู่ของรายการนี้?');">
+                  <form method="post" class="d-inline" id="clearForm<?php echo $sid; ?>">
                     <input type="hidden" name="action" value="clear_one">
                     <input type="hidden" name="sport_id" value="<?php echo $sid; ?>">
-                    <button class="btn btn-sm btn-outline-danger">ล้าง</button>
+                    <button type="button" class="btn btn-sm btn-outline-danger" onclick="confirmClearOne(<?php echo $sid; ?>, '<?php echo addslashes($s['name']); ?>')">ล้าง</button>
                   </form>
                 </div>
               </td>
@@ -400,4 +435,79 @@ $ok=flash('ok'); $err=flash('err');
     </div>
   </div>
 </main>
+
+<script>
+  async function confirmGenAll() {
+    const result = await Swal.fire({
+      icon: 'question',
+      title: 'ยืนยันการสุ่มทั้งหมด?',
+      html: 'สุ่มรอบคัดเลือกทั้งหมดของรายการที่กรองอยู่<br><span class="text-danger">ของเดิมจะถูกล้าง</span>',
+      showCancelButton: true,
+      confirmButtonText: 'ยืนยัน',
+      cancelButtonText: 'ยกเลิก',
+      confirmButtonColor: '#198754',
+      cancelButtonColor: '#6c757d',
+      reverseButtons: true
+    });
+    
+    if (result.isConfirmed) {
+      document.getElementById('genAllForm').submit();
+    }
+  }
+
+  async function confirmClearAll() {
+    const result = await Swal.fire({
+      icon: 'warning',
+      title: 'ยืนยันการล้างทั้งหมด?',
+      html: 'ล้างคู่ทั้งหมดของรายการที่กรองอยู่<br><span class="text-danger fw-bold">ไม่สามารถกู้คืนได้!</span>',
+      showCancelButton: true,
+      confirmButtonText: 'ยืนยันการลบ',
+      cancelButtonText: 'ยกเลิก',
+      confirmButtonColor: '#dc3545',
+      cancelButtonColor: '#6c757d',
+      reverseButtons: true
+    });
+    
+    if (result.isConfirmed) {
+      document.getElementById('clearAllForm').submit();
+    }
+  }
+
+  async function confirmGenOne(sportId, sportName) {
+    const result = await Swal.fire({
+      icon: 'question',
+      title: 'ยืนยันการสุ่ม?',
+      html: `สุ่มคู่การแข่งขันสำหรับ<br><strong>${sportName}</strong><br><span class="text-warning">ของเดิม (ถ้ามี) จะถูกล้าง</span>`,
+      showCancelButton: true,
+      confirmButtonText: 'สุ่มเลย',
+      cancelButtonText: 'ยกเลิก',
+      confirmButtonColor: '#0d6efd',
+      cancelButtonColor: '#6c757d',
+      reverseButtons: true
+    });
+    
+    if (result.isConfirmed) {
+      document.getElementById('genForm' + sportId).submit();
+    }
+  }
+
+  async function confirmClearOne(sportId, sportName) {
+    const result = await Swal.fire({
+      icon: 'warning',
+      title: 'ยืนยันการล้าง?',
+      html: `ล้างคู่การแข่งขันของ<br><strong>${sportName}</strong><br><span class="text-danger fw-bold">ไม่สามารถกู้คืนได้!</span>`,
+      showCancelButton: true,
+      confirmButtonText: 'ยืนยันการลบ',
+      cancelButtonText: 'ยกเลิก',
+      confirmButtonColor: '#dc3545',
+      cancelButtonColor: '#6c757d',
+      reverseButtons: true
+    });
+    
+    if (result.isConfirmed) {
+      document.getElementById('clearForm' + sportId).submit();
+    }
+  }
+</script>
+
 <?php include __DIR__ . '/../includes/footer.php'; ?>
