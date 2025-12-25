@@ -139,6 +139,7 @@ ob_start();
 <meta charset="utf-8">
 <title>สูจิบัตรกรีฑา - <?=$yearName?></title>
 <style>
+  @page { margin: 12mm 12mm 12mm 25mm; }
   @font-face { font-family:'THSarabunNew'; src:url('assets/fonts/THSarabunNew.ttf') format('truetype'); }
   @font-face { font-family:'THSarabunNew'; src:url('assets/fonts/THSarabunNew-Bold.ttf') format('truetype'); font-weight:bold; }
 

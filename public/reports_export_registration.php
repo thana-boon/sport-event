@@ -52,6 +52,7 @@ ob_start();
 <!-- โหลดฟอนต์ Sarabun (กรณี fallback HTML) -->
 <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
+  @page { margin: 12mm 12mm 12mm 25mm; }
   *{ box-sizing:border-box; }
   html,body{ height:100%; }
   body{ font-family:"Sarabun", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color:#0f172a; margin:0; }

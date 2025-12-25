@@ -64,6 +64,12 @@ try {
                           VALUES (:y,:s,:c,:r)
                           ON DUPLICATE KEY UPDATE rank=VALUES(rank), updated_at=CURRENT_TIMESTAMP");
     
+    // ⭐ ตรวจสอบอันดับซ้ำ
+    $rankValues = array_filter(array_map('intval', $ranks), fn($r) => $r >= 1 && $r <= 4);
+    if (count($rankValues) !== count(array_unique($rankValues))) {
+        throw new Exception('ไม่สามารถบันทึกอันดับซ้ำกันได้');
+    }
+
     // เก็บข้อมูลสำหรับ log
     $details = [];
     foreach ($ranks as $color => $rk) {
@@ -85,24 +91,77 @@ try {
   }
 
   if ($type === 'athletics') {
-    $sport_id = (int)($data['sport_id'] ?? 0);
-    $lanes = $data['lanes'] ?? [];
-    $best_name = trim($data['best_name'] ?? '');
-    $best_time = trim($data['best_time'] ?? '');
-    $best_year = (int)($data['best_year'] ?? 0);
-    
-    if ($sport_id <= 0) throw new Exception('sport_id invalid');
+    try {
+      $sport_id = (int)($data['sport_id'] ?? 0);
+      $lanes = $data['lanes'] ?? [];
+      $best_name = trim($data['best_name'] ?? '');
+      $best_time = trim($data['best_time'] ?? '');
+      $best_year = (int)($data['best_year'] ?? 0);
+      
+      if ($sport_id <= 0) throw new Exception('sport_id invalid');
 
-    // ดึงชื่อกีฬาสำหรับ log
-    $sportStmt = $pdo->prepare("SELECT name FROM sports WHERE id=?");
-    $sportStmt->execute([$sport_id]);
-    $sportName = $sportStmt->fetchColumn() ?: 'ID:' . $sport_id;
+      // ดึงชื่อกีฬาสำหรับ log
+      $sportStmt = $pdo->prepare("SELECT name FROM sports WHERE id=?");
+      $sportStmt->execute([$sport_id]);
+      $sportName = $sportStmt->fetchColumn() ?: 'ID:' . $sport_id;
+
+    // สร้างตาราง history สำหรับเก็บประวัติสถิติเก่า
+    $pdo->exec("CREATE TABLE IF NOT EXISTS athletics_record_history (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      athletics_event_id INT UNSIGNED NOT NULL,
+      sport_id INT DEFAULT 0,
+      sport_name VARCHAR(255) DEFAULT NULL,
+      year_id INT DEFAULT 0,
+      result_id INT DEFAULT NULL,
+      old_best_time VARCHAR(32) DEFAULT NULL,
+      old_best_year_be INT DEFAULT NULL,
+      old_notes VARCHAR(255) DEFAULT NULL,
+      broken_by_time VARCHAR(32) DEFAULT NULL,
+      broken_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      restored_at TIMESTAMP NULL DEFAULT NULL,
+      INDEX idx_event (athletics_event_id),
+      INDEX idx_sport (sport_id),
+      INDEX idx_sport_name (sport_name)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    
+    // เพิ่มคอลัมน์ถ้ายังไม่มี (สำหรับตารางเก่า)
+    try {
+      $pdo->exec("ALTER TABLE athletics_record_history ADD COLUMN sport_id INT DEFAULT 0 AFTER athletics_event_id");
+    } catch (PDOException $e) {}
+    
+    try {
+      $pdo->exec("ALTER TABLE athletics_record_history ADD COLUMN sport_name VARCHAR(255) DEFAULT NULL AFTER sport_id");
+    } catch (PDOException $e) {}
+    
+    try {
+      $pdo->exec("ALTER TABLE athletics_record_history ADD COLUMN year_id INT DEFAULT 0 AFTER sport_name");
+    } catch (PDOException $e) {}
+    
+    try {
+      $pdo->exec("ALTER TABLE athletics_record_history ADD COLUMN restored_at TIMESTAMP NULL DEFAULT NULL AFTER broken_at");
+    } catch (PDOException $e) {}
+    
+    try {
+      $pdo->exec("ALTER TABLE athletics_record_history ADD COLUMN result_id INT DEFAULT NULL AFTER athletics_event_id");
+    } catch (PDOException $e) {};
 
     // First heat
     $h = $pdo->prepare("SELECT id FROM track_heats WHERE year_id=? AND sport_id=? ORDER BY heat_no ASC LIMIT 1");
     $h->execute([$year_id, $sport_id]);
     $heat_id = $h->fetchColumn();
     if (!$heat_id) throw new Exception('no heat for sport');
+
+    // ⭐ ตรวจสอบอันดับซ้ำ (กรีฑา)
+    $rankValues = [];
+    foreach ($lanes as $L) {
+        $r = trim((string)($L['rank'] ?? ''));
+        if ($r !== '') {
+            $rankValues[] = (int)$r;
+        }
+    }
+    if (count($rankValues) !== count(array_unique($rankValues))) {
+        throw new Exception('ไม่สามารถบันทึกอันดับซ้ำกันได้');
+    }
 
     // บันทึก lanes (รวม is_record)
     $up = $pdo->prepare("INSERT INTO track_results (heat_id,lane_no,time_str,rank,is_record)
@@ -134,22 +193,45 @@ try {
       }
     }
 
-    // อัปเดตสถิติ (ใช้ logic เดียว)
+    // อัปเดตสถิติพร้อมเก็บประวัติ (เฉพาะเมื่อทำลายสถิติจริง)
     $recordUpdated = false;
     if ($best_time !== '') {
-      $q = $pdo->prepare("SELECT id, best_time FROM athletics_events WHERE year_id=? AND sport_id=? ORDER BY id DESC LIMIT 1");
+      $q = $pdo->prepare("SELECT id, best_time, best_year_be, notes FROM athletics_events WHERE year_id=? AND sport_id=? ORDER BY id DESC LIMIT 1");
       $q->execute([$year_id, $sport_id]);
       $row = $q->fetch(PDO::FETCH_ASSOC);
       $new = (float)$best_time;
-      $cur = $row && $row['best_time'] !== '' ? (float)$row['best_time'] : null;
+      $cur = $row && $row['best_time'] !== '' && $row['best_time'] !== null ? (float)$row['best_time'] : null;
       
       if ($row) {
-        // อัปเดตสถิติ (ไม่เช็คว่าทำลายสถิติหรือไม่ → ให้ผู้ใช้ตัดสินใจเอง)
+        // เช็คว่าทำลายสถิติจริงหรือไม่ (เวลาน้อยกว่า = ดีกว่า)
+        $isBrokenRecord = false;
+        if ($cur !== null && $new < $cur) {
+          $isBrokenRecord = true;
+        }
+        
+        // ถ้ามีสถิติเดิมอยู่แล้ว และทำลายสถิติจริง → เก็บประวัติก่อนอัปเดต
+        if ($isBrokenRecord && $row['best_time'] !== '' && $row['best_time'] !== null) {
+          $historyStmt = $pdo->prepare("INSERT INTO athletics_record_history 
+            (athletics_event_id, sport_id, sport_name, year_id, old_best_time, old_best_year_be, old_notes, broken_by_time) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+          $historyStmt->execute([
+            $row['id'],
+            $sport_id,
+            $sportName,
+            $year_id,
+            $row['best_time'],
+            $row['best_year_be'],
+            $row['notes'],
+            $best_time
+          ]);
+        }
+        
+        // อัปเดตสถิติ
         $u = $pdo->prepare("UPDATE athletics_events SET best_time=?, best_year_be=?, notes=? WHERE id=?");
         $u->execute([$best_time, ($best_year ?: $year_be), $best_name, $row['id']]);
         $recordUpdated = true;
       } else {
-        // ยังไม่มี → INSERT ใหม่
+        // ยังไม่มี → INSERT ใหม่ (ไม่ต้องเก็บประวัติ เพราะยังไม่มีสถิติเก่า)
         $i = $pdo->prepare("INSERT INTO athletics_events (year_id, sport_id, event_code, best_student_id, best_time, best_year_be, notes)
                             VALUES (?,?,?,?,?,?,?)");
         $i->execute([$year_id, $sport_id, '', null, $best_time, ($best_year ?: $year_be), $best_name]);
@@ -175,7 +257,11 @@ try {
 
     log_activity('UPDATE', 'track_results', $sport_id, $logDetail);
 
-    echo json_encode(['ok' => true]);
+      echo json_encode(['ok' => true]);
+    } catch (Throwable $e) {
+      error_log("Athletics save error: " . $e->getMessage());
+      echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    }
     exit;
   }
 
@@ -248,6 +334,101 @@ try {
               $e->getMessage(), 
               $sportName ?? 'unknown',
               $year_be));
+          
+          echo json_encode(['ok'=>false,'error'=>$e->getMessage()]);
+      }
+      exit;
+  }
+
+  // RESTORE: คืนค่าสถิติจากประวัติ
+  if (isset($data['type']) && $data['type'] === 'restore_record') {
+      try {
+          $history_id = (int)($data['history_id'] ?? 0);
+          if ($history_id <= 0) throw new Exception('missing history_id');
+
+          $pdo->beginTransaction();
+
+          // ดึงข้อมูลจากประวัติ
+          $histStmt = $pdo->prepare("SELECT athletics_event_id, old_best_time, old_best_year_be, old_notes 
+                                     FROM athletics_record_history WHERE id=?");
+          $histStmt->execute([$history_id]);
+          $hist = $histStmt->fetch(PDO::FETCH_ASSOC);
+          
+          if (!$hist) throw new Exception('ไม่พบประวัติที่ต้องการคืนค่า');
+
+          // อัปเดตสถิติกลับไปเป็นค่าเก่า
+          $updateStmt = $pdo->prepare("UPDATE athletics_events 
+                                       SET best_time=?, best_year_be=?, notes=? 
+                                       WHERE id=?");
+          $updateStmt->execute([
+              $hist['old_best_time'],
+              $hist['old_best_year_be'],
+              $hist['old_notes'],
+              $hist['athletics_event_id']
+          ]);
+
+          // ⭐ Reset is_record=0 ใน track_results (เคลียร์ติ๊กถูกที่ค้าง)
+          $resetRecordStmt = $pdo->prepare("UPDATE track_results tr
+                                             JOIN track_heats th ON th.id = tr.heat_id
+                                             JOIN athletics_events ae ON ae.year_id = th.year_id AND ae.sport_id = th.sport_id
+                                             SET tr.is_record = 0
+                                             WHERE ae.id = ?");
+          $resetRecordStmt->execute([$hist['athletics_event_id']]);
+
+          // ลบประวัติที่คืนค่าแล้ว
+          $delHistStmt = $pdo->prepare("DELETE FROM athletics_record_history WHERE id=?");
+          $delHistStmt->execute([$history_id]);
+
+          $pdo->commit();
+
+          // 🔥 LOG: คืนค่าสถิติสำเร็จ
+          log_activity('UPDATE', 'athletics_events', $hist['athletics_event_id'], 
+            sprintf("คืนค่าสถิติ: %s | เวลา: %s | ปี: %s", 
+              $hist['old_notes'] ?: '-',
+              $hist['old_best_time'] ?: '-',
+              $hist['old_best_year_be'] ?: '-'));
+
+          echo json_encode(['ok'=>true]);
+      } catch (Throwable $e) {
+          if ($pdo && $pdo->inTransaction()) $pdo->rollBack();
+          
+          log_activity('ERROR', 'athletics_record_history', $history_id ?? null, 
+            'คืนค่าสถิติไม่สำเร็จ: ' . $e->getMessage());
+          
+          echo json_encode(['ok'=>false,'error'=>$e->getMessage()]);
+      }
+      exit;
+  }
+
+  // DELETE HISTORY: ลบประวัติสถิติ
+  if (isset($data['type']) && $data['type'] === 'delete_history') {
+      try {
+          $history_id = (int)($data['history_id'] ?? 0);
+          if ($history_id <= 0) throw new Exception('missing history_id');
+
+          // ดึงข้อมูลก่อนลบเพื่อ log
+          $histStmt = $pdo->prepare("SELECT old_best_time, old_best_year_be, old_notes 
+                                     FROM athletics_record_history WHERE id=?");
+          $histStmt->execute([$history_id]);
+          $hist = $histStmt->fetch(PDO::FETCH_ASSOC);
+          
+          if (!$hist) throw new Exception('ไม่พบประวัติที่ต้องการลบ');
+
+          // ลบประวัติ
+          $delStmt = $pdo->prepare("DELETE FROM athletics_record_history WHERE id=?");
+          $delStmt->execute([$history_id]);
+
+          // 🔥 LOG: ลบประวัติสถิติสำเร็จ
+          log_activity('DELETE', 'athletics_record_history', $history_id, 
+            sprintf("ลบประวัติสถิติ: %s | เวลา: %s | ปี: %s", 
+              $hist['old_notes'] ?: '-',
+              $hist['old_best_time'] ?: '-',
+              $hist['old_best_year_be'] ?: '-'));
+
+          echo json_encode(['ok'=>true]);
+      } catch (Throwable $e) {
+          log_activity('ERROR', 'athletics_record_history', $history_id ?? null, 
+            'ลบประวัติสถิติไม่สำเร็จ: ' . $e->getMessage());
           
           echo json_encode(['ok'=>false,'error'=>$e->getMessage()]);
       }

@@ -11,6 +11,18 @@ try {
   }
   
   $pdo = db();
+  
+  // สร้างตาราง history สำหรับเก็บประวัติสถิติเก่า
+  $pdo->exec("CREATE TABLE IF NOT EXISTS athletics_record_history (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    athletics_event_id INT UNSIGNED NOT NULL,
+    old_best_time VARCHAR(32) DEFAULT NULL,
+    old_best_year_be INT DEFAULT NULL,
+    old_notes VARCHAR(255) DEFAULT NULL,
+    broken_by_time VARCHAR(32) DEFAULT NULL,
+    broken_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_event (athletics_event_id)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
   // Active year
   $yr = $pdo->query("SELECT id, year_be FROM academic_years WHERE is_active=1 ORDER BY id DESC LIMIT 1")->fetch(PDO::FETCH_ASSOC);
@@ -125,15 +137,85 @@ try {
     }
   } catch (Throwable $e) {}
 
+  // ⭐ เพิ่มคอลัมน์ sport_id, sport_name, year_id, restored_at, result_id ถ้ายังไม่มี (ทำก่อนทุกครั้ง)
+  try {
+    $pdo->exec("ALTER TABLE athletics_record_history ADD COLUMN sport_id INT DEFAULT 0 AFTER athletics_event_id");
+  } catch (PDOException $e) {}
+  
+  try {
+    $pdo->exec("ALTER TABLE athletics_record_history ADD COLUMN sport_name VARCHAR(255) DEFAULT NULL AFTER sport_id");
+  } catch (PDOException $e) {}
+  
+  try {
+    $pdo->exec("ALTER TABLE athletics_record_history ADD COLUMN year_id INT DEFAULT 0 AFTER sport_name");
+  } catch (PDOException $e) {}
+  
+  try {
+    $pdo->exec("ALTER TABLE athletics_record_history ADD COLUMN restored_at TIMESTAMP NULL DEFAULT NULL AFTER broken_at");
+  } catch (PDOException $e) {}
+  
+  try {
+    $pdo->exec("ALTER TABLE athletics_record_history ADD COLUMN result_id INT DEFAULT NULL AFTER athletics_event_id");
+  } catch (PDOException $e) {}
+  
+  // ⭐ Migration: อัพเดท sport_id, sport_name และ year_id จาก athletics_events และ sports (สำหรับข้อมูลเก่า)
+  try {
+    $migrated = $pdo->exec("UPDATE athletics_record_history arh
+                JOIN athletics_events ae ON ae.id = arh.athletics_event_id
+                JOIN sports s ON s.id = ae.sport_id
+                SET arh.sport_id = ae.sport_id, 
+                    arh.sport_name = s.name,
+                    arh.year_id = ae.year_id
+                WHERE arh.sport_name IS NULL OR arh.sport_id = 0 OR arh.year_id = 0");
+    if ($migrated > 0) {
+      error_log("Migrated {$migrated} athletics_record_history rows with sport_name");
+    }
+  } catch (PDOException $e) {
+    error_log("Migration error: " . $e->getMessage());
+  }
+  
+  // ดึงชื่อกีฬาปัจจุบัน
+  $sportStmt = $pdo->prepare("SELECT name FROM sports WHERE id=?");
+  $sportStmt->execute([$sport_id]);
+  $currentSportName = $sportStmt->fetchColumn();
+
   // Best record
   $best = null;
-  $b = $pdo->prepare("SELECT best_time, best_year_be, notes FROM athletics_events WHERE year_id=? AND sport_id=? ORDER BY id DESC LIMIT 1");
+  $recordBroken = false;
+  $history = [];
+  $eventId = null;
+  
+  $b = $pdo->prepare("SELECT id, best_time, best_year_be, notes FROM athletics_events WHERE year_id=? AND sport_id=? ORDER BY id DESC LIMIT 1");
   $b->execute([$year_id, $sport_id]);
   if ($r = $b->fetch(PDO::FETCH_ASSOC)) {
+    $eventId = $r['id'];
     $best = ['holder'=>$r['notes']?:'', 'time_sec'=>$r['best_time'], 'year'=>$r['best_year_be']];
   }
+  
+  // ⭐ ตรวจสอบว่ามีการทำลายสถิติภายใน 7 วันหรือไม่ (ใช้ sport_name)
+  $checkHistory = $pdo->prepare("SELECT COUNT(*) FROM athletics_record_history 
+                                 WHERE sport_name=? 
+                                 AND restored_at IS NULL
+                                 AND broken_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)");
+  $checkHistory->execute([$currentSportName]);
+  if ($checkHistory->fetchColumn() > 0) {
+    $recordBroken = true;
+  }
+  
+  // ⭐ ดึงประวัติสถิติเก่าจาก sport_name (ข้ามปีการศึกษา) พร้อมชื่อปีการศึกษา
+  $h = $pdo->prepare("SELECT arh.id, arh.athletics_event_id, arh.sport_id, arh.sport_name, 
+                             arh.year_id, arh.result_id,
+                             arh.old_best_time, arh.old_best_year_be, arh.old_notes, 
+                             arh.broken_by_time, arh.broken_at, arh.restored_at,
+                             ay.year_be as year_name
+                      FROM athletics_record_history arh
+                      LEFT JOIN academic_years ay ON ay.id = arh.year_id
+                      WHERE arh.sport_name=?
+                      ORDER BY arh.broken_at DESC LIMIT 20");
+  $h->execute([$currentSportName]);
+  $history = $h->fetchAll(PDO::FETCH_ASSOC);
 
-  echo json_encode(['ok'=>true,'lanes'=>array_values($lanes),'best'=>$best,'is_relay'=>$isRelay], JSON_UNESCAPED_UNICODE);
+  echo json_encode(['ok'=>true,'lanes'=>array_values($lanes),'best'=>$best,'is_relay'=>$isRelay,'record_broken'=>$recordBroken,'history'=>$history,'event_id'=>$eventId], JSON_UNESCAPED_UNICODE);
 } catch (Throwable $e) {
   echo json_encode(['ok'=>false,'error'=>$e->getMessage()]);
 }

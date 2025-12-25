@@ -437,6 +437,8 @@ $categories = $stmt->fetchAll(PDO::FETCH_COLUMN);
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
+  <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+  <link href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet" />
   <style>
     body {
       font-family: 'Kanit', sans-serif;
@@ -471,14 +473,6 @@ $categories = $stmt->fetchAll(PDO::FETCH_COLUMN);
     .stat-label {
       font-size: 1.1rem;
       opacity: 0.9;
-    }
-    
-    .filter-section {
-      background: white;
-      padding: 1.5rem;
-      border-radius: 1rem;
-      margin-bottom: 1.5rem;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.05);
     }
     
     .color-badge {
@@ -631,6 +625,14 @@ $categories = $stmt->fetchAll(PDO::FETCH_COLUMN);
       max-height: 500px;
       overflow-y: auto;
     }
+    
+    body {
+      padding-top: 0;
+    }
+    
+    main.container {
+      padding-top: 3.5rem !important;
+    }
   </style>
 </head>
 <body>
@@ -719,30 +721,6 @@ $categories = $stmt->fetchAll(PDO::FETCH_COLUMN);
               </ul>
             </nav>
           </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Filter -->
-    <div class="filter-section">
-      <div class="row g-3">
-        <div class="col-md-6">
-          <label class="form-label fw-semibold">
-            <i class="bi bi-funnel"></i> ประเภทกีฬา
-          </label>
-          <select id="categoryFilter" class="form-select">
-            <option value="">ทั้งหมด</option>
-            <?php foreach ($categories as $cat): ?>
-              <option value="<?= htmlspecialchars($cat) ?>"><?= htmlspecialchars($cat) ?></option>
-            <?php endforeach; ?>
-          </select>
-        </div>
-        
-        <div class="col-md-6">
-          <label class="form-label fw-semibold">
-            <i class="bi bi-search"></i> ค้นหากีฬา
-          </label>
-          <input type="text" id="sportSearch" class="form-control" placeholder="พิมพ์ชื่อกีฬา...">
         </div>
       </div>
     </div>
@@ -859,6 +837,8 @@ $categories = $stmt->fetchAll(PDO::FETCH_COLUMN);
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
   <script>
     let currentSportId = null;
@@ -876,14 +856,26 @@ $categories = $stmt->fetchAll(PDO::FETCH_COLUMN);
     document.addEventListener('DOMContentLoaded', function() {
       substituteModal = new bootstrap.Modal(document.getElementById('substituteModal'));
       
+      // Initialize Select2 for sport select
+      $('#sportSelect').select2({
+        theme: 'bootstrap-5',
+        placeholder: '-- เลือกรายการกีฬา --',
+        allowClear: true,
+        width: '100%',
+        language: {
+          noResults: function() {
+            return 'ไม่พบข้อมูล';
+          },
+          searching: function() {
+            return 'กำลังค้นหา...';
+          }
+        }
+      });
+      
       // Load dashboard
       loadDashboard();
       
-      // Filter events
-      document.getElementById('categoryFilter').addEventListener('change', filterSports);
-      document.getElementById('sportSearch').addEventListener('input', filterSports);
-      
-      document.getElementById('sportSelect').addEventListener('change', function() {
+      $('#sportSelect').on('change', function() {
         if (this.value) {
           currentSportId = this.value;
           loadSport(this.value);
@@ -901,26 +893,6 @@ $categories = $stmt->fetchAll(PDO::FETCH_COLUMN);
         filterAllSubstitutions(this.value);
       });
     });
-
-    function filterSports() {
-      const category = document.getElementById('categoryFilter').value;
-      const search = document.getElementById('sportSearch').value.toLowerCase();
-      const select = document.getElementById('sportSelect');
-      const options = select.querySelectorAll('option[value]');
-      
-      options.forEach(option => {
-        if (!option.value) return;
-        
-        const optCategory = option.dataset.category || '';
-        const optName = (option.dataset.name || '').toLowerCase();
-        
-        let show = true;
-        if (category && optCategory !== category) show = false;
-        if (search && !optName.includes(search)) show = false;
-        
-        option.style.display = show ? '' : 'none';
-      });
-    }
 
     async function showAlert(message, type = 'success') {
       const iconMap = {

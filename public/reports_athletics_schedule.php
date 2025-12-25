@@ -172,6 +172,8 @@ if (isset($_GET['download'])) {
       }
       <?php endif; ?>
       
+      @page { margin: 12mm 12mm 12mm 35mm; }
+      
       * {
         margin: 0;
         padding: 0;
@@ -181,7 +183,7 @@ if (isset($_GET['download'])) {
         font-family: 'THSarabunNew', 'DejaVu Sans', sans-serif;
         font-size: 16pt;
         margin: 0;
-        padding: 15px;
+        padding: 8mm 8mm 8mm 15mm;
         line-height: 1.3;
       }
       .header {

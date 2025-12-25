@@ -124,7 +124,7 @@ function loadMatchesOfSport(PDO $pdo, int $yearId, int $sportId){
 // ===== HTML + CSS (match booklet style) =====
 $html = '<!DOCTYPE html><html lang="th"><head><meta charset="utf-8">';
 $html .= '<style>
-  @page { margin: 12mm 8mm 12mm 8mm; }
+  @page { margin: 12mm 8mm 12mm 25mm; }
   .page-break { page-break-before: always; }
   @font-face {
     font-family: "THSarabunNew";

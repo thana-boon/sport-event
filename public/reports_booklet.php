@@ -196,7 +196,7 @@ if (!empty($meta['logo_path'])) {
 
 // เพิ่ม CSS สำหรับ page break
 $css = '
-  @page { size: A4 portrait; margin: 14mm 12mm 16mm 12mm; }
+  @page { size: A4 portrait; margin: 14mm 12mm 16mm 25mm; }
   .page-break { page-break-before: always; }
   @font-face { font-family:"THSarabunNew";
                src: url("assets/fonts/THSarabunNew.ttf") format("truetype"); }

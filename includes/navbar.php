@@ -77,7 +77,7 @@ $hideNav = (strpos($uri, '/login.php') !== false)
 
 if (!$hideNav):
 ?>
-<nav class="navbar navbar-expand-lg navbar-dark bg-primary shadow-sm">
+<nav class="navbar navbar-expand-lg navbar-dark shadow-sm" style="background: linear-gradient(135deg, #0ea5e9 0%, #0369a1 100%);">
   <div class="container">
     <a class="navbar-brand fw-semibold" href="<?php echo BASE_URL; ?>/index.php">
       🏆 <?php echo e($brandText); ?>

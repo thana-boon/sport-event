@@ -176,7 +176,7 @@ if ($action === 'students_by_class') {
 
   // CSS - บีบให้แคบและกระชับ
   $css = <<<CSS
-  @page { size: A4 portrait; margin: 5mm 8mm; }
+  @page { size: A4 portrait; margin: 5mm 8mm 5mm 25mm; }
   @font-face {
     font-family: 'THSarabunNew';
     src: url('assets/fonts/THSarabunNew.ttf') format('truetype');
