@@ -176,7 +176,7 @@ if ($action === 'students_by_class') {
 
   // CSS - บีบให้แคบและกระชับ
   $css = <<<CSS
-  @page { size: A4 portrait; margin: 5mm 8mm; }
+  @page { size: A4 portrait; margin: 5mm 8mm 5mm 25mm; }
   @font-face {
     font-family: 'THSarabunNew';
     src: url('assets/fonts/THSarabunNew.ttf') format('truetype');
@@ -349,6 +349,14 @@ if ($action === 'students_by_class') {
 
 // ===== Action: export PDF ใบเช็คชื่อนักกีฬา (แยกสี) =====
 if ($action === 'sheet') {
+  // ✅ เพิ่ม memory และ execution time
+  ini_set('memory_limit', '512M');
+  ini_set('max_execution_time', '300');
+  
+  // ✅ เพิ่ม error logging
+  error_reporting(E_ALL);
+  ini_set('display_errors', 1);
+  
   // รับสี (ไทย): เขียว/ฟ้า/ชมพู/ส้ม
   $color = $_GET['color'] ?? '';
   $validColors = ['เขียว','ฟ้า','ชมพู','ส้ม'];
@@ -356,190 +364,207 @@ if ($action === 'sheet') {
     $color = 'เขียว';
   }
 
-  // ดึงนักเรียนตามปีและสี
-  $stmt = $pdo->prepare("
-    SELECT s.student_code, s.first_name, s.last_name,
-           s.class_level, s.class_room, s.number_in_room, s.color
-    FROM students s
-    WHERE s.year_id = :y AND s.color = :c
-    ORDER BY s.class_level, s.class_room,
-             CAST(s.number_in_room AS UNSIGNED), s.first_name
-  ");
-  $stmt->execute([':y'=>$yearId, ':c'=>$color]);
-  $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+  try {
+    // ดึงนักเรียนตามปีและสี
+    $stmt = $pdo->prepare("
+      SELECT s.student_code, s.first_name, s.last_name,
+             s.class_level, s.class_room, s.number_in_room, s.color
+      FROM students s
+      WHERE s.year_id = :y AND s.color = :c
+      ORDER BY s.class_level, s.class_room,
+               CAST(s.number_in_room AS UNSIGNED), s.first_name
+      LIMIT 1000
+    ");
+    $stmt->execute([':y'=>$yearId, ':c'=>$color]);
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-  // จัดกลุ่มตามห้อง: key = 'ชั้น/ห้อง' เช่น ป3/2 หรือ ม4/1
-  $byRoom = [];
-  foreach ($rows as $r) {
-    $key = ($r['class_level'] ?? '') . '/' . ($r['class_room'] ?? '');
-    if (!isset($byRoom[$key])) $byRoom[$key] = [];
-    $byRoom[$key][] = $r;
-  }
+    // จัดกลุ่มตามห้อง
+    $byRoom = [];
+    foreach ($rows as $r) {
+      $key = ($r['class_level'] ?? '') . '/' . ($r['class_room'] ?? '');
+      if (!isset($byRoom[$key])) $byRoom[$key] = [];
+      $byRoom[$key][] = $r;
+    }
 
-  // เตรียม HTML สำหรับ dompdf
-  // BasePath ให้ dompdf หาไฟล์ฟอนต์จาก public ได้ถูกต้อง
-  $basePath = rtrim(str_replace('\\', '/', __DIR__), '/'); // .../public
+    // ✅ ตรวจสอบ path ของ font
+    $basePath = rtrim(str_replace('\\', '/', __DIR__), '/');
+    $fontPath = $basePath . '/assets/fonts/THSarabunNew.ttf';
+    
+    // ✅ ถ้าไม่มีฟอนต์ ให้ใช้ DejaVu Sans แทน
+    $fontFamily = 'THSarabunNew';
+    if (!file_exists($fontPath)) {
+      $fontFamily = 'DejaVu Sans';
+    }
 
-  // CSS: บังคับคอลัมน์ชัดเจน (ชื่อ-นามสกุลกว้างขึ้น)
-  $css = <<<CSS
-  @page { size: A4 portrait; margin: 6mm 6mm; }
+    // CSS - แก้ไข font-family
+    $css = <<<CSS
+    @page { size: A4 portrait; margin: 6mm 6mm; }
 
-  @font-face {
-    font-family: 'THSarabunNew';
-    src: url('assets/fonts/THSarabunNew.ttf') format('truetype');
-  }
-  @font-face {
-    font-family: 'THSarabunNew';
-    src: url('assets/fonts/THSarabunNew-Bold.ttf') format('truetype');
-    font-weight: bold;
-  }
+    @font-face {
+      font-family: 'THSarabunNew';
+      src: url('assets/fonts/THSarabunNew.ttf') format('truetype');
+    }
+    @font-face {
+      font-family: 'THSarabunNew';
+      src: url('assets/fonts/THSarabunNew-Bold.ttf') format('truetype');
+      font-weight: bold;
+    }
 
-  body {
-    font-family: 'THSarabunNew', 'DejaVu Sans', sans-serif;
-    font-size: 11pt;
-    line-height: 0.7;
-  }
+    body {
+      font-family: '{$fontFamily}', 'DejaVu Sans', sans-serif;
+      font-size: 11pt;
+      line-height: 0.7;
+    }
 
-  .title {
-    text-align: center; font-weight: bold; font-size: 14pt; margin-bottom: 6mm;
-  }
-  .meta {
-    text-align: center; margin-top: -4mm; margin-bottom: 3mm;
-  }
+    .title {
+      text-align: center; font-weight: bold; font-size: 14pt; margin-bottom: 6mm;
+    }
+    .meta {
+      text-align: center; margin-top: -4mm; margin-bottom: 3mm;
+    }
 
-  table { width: 180mm; border-collapse: collapse; }
-  th, td {
-    border: 1px solid #000;
-    padding: 1.2px 2px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  th { text-align: center; font-weight: bold; }
+    table { width: 180mm; border-collapse: collapse; }
+    th, td {
+      border: 1px solid #000;
+      padding: 1.2px 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    th { text-align: center; font-weight: bold; }
 
-  .hdr-top th { border-bottom: none; }
-  .hdr-btm th { border-top: none; }
+    .hdr-top th { border-bottom: none; }
+    .hdr-btm th { border-top: none; }
 
-  th.w-code, td.w-code { width: 16mm !important; min-width:16mm; max-width:16mm; }
-  th.w-name, td.w-name { width: 100mm !important; min-width:100mm; max-width:100mm; word-break: break-word; }
-  th.w-num,  td.w-num  { width: 9mm  !important; min-width:9mm;  max-width:9mm; }
-  th.w-chk,  td.w-chk  { width: 5mm  !important; min-width:5mm;  max-width:5mm; }
+    th.w-code, td.w-code { width: 16mm !important; min-width:16mm; max-width:16mm; }
+    th.w-name, td.w-name { width: 100mm !important; min-width:100mm; max-width:100mm; word-break: break-word; }
+    th.w-num,  td.w-num  { width: 9mm  !important; min-width:9mm;  max-width:9mm; }
+    th.w-chk,  td.w-chk  { width: 5mm  !important; min-width:5mm;  max-width:5mm; }
 
-  tbody td { height: 4.2mm; }
+    tbody td { height: 4.2mm; }
 
-  .td-center { text-align: center; }
+    .td-center { text-align: center; }
 
-  .note-top { margin-bottom: 2mm; }
+    .note-top { margin-bottom: 2mm; }
 
-  .page-break { page-break-after: always; }
-  CSS;
+    .page-break { page-break-after: always; }
+    CSS;
 
-  // ฟังก์ชันเรนเดอร์ตารางต่อห้อง
-  $renderRoom = function(string $roomKey, array $students) use ($color, $yearName) {
+    // ฟังก์ชันเรนเดอร์ตารางต่อห้อง
+    $renderRoom = function(string $roomKey, array $students) use ($color, $yearName) {
+      $parts = explode('/', $roomKey, 2);
+      $classLevel = $parts[0] ?? '';
+      $classRoom  = $parts[1] ?? '';
+      $roomLabel  = trim($classLevel . ' / ' . $classRoom);
 
-    // แยกชั้น/ห้องจาก key
-    $parts = explode('/', $roomKey, 2);
-    $classLevel = $parts[0] ?? '';
-    $classRoom  = $parts[1] ?? '';
-    $roomLabel  = trim($classLevel . ' / ' . $classRoom);
-
-    // ทำ 50 แถว (เติมค่าว่างหากไม่ครบ)
-    $maxRows = 50;
-    $count = count($students);
-    if ($count < $maxRows) {
-      for ($i=$count; $i<$maxRows; $i++) {
-        $students[] = [
-          'student_code'  => '',
-          'first_name'    => '',
-          'last_name'     => '',
-          'number_in_room'=> '',
-        ];
+      // ทำ 50 แถว
+      $maxRows = 50;
+      $count = count($students);
+      if ($count < $maxRows) {
+        for ($i=$count; $i<$maxRows; $i++) {
+          $students[] = [
+            'student_code'  => '',
+            'first_name'    => '',
+            'last_name'     => '',
+            'number_in_room'=> '',
+          ];
+        }
       }
+
+      $colorLabel = 'สี ' . $color . ' ' . $yearName;
+
+      ob_start();
+      ?>
+      <div class="title">ใบเช็คชื่อนักกีฬา การแข่งขันกีฬาสีราชพฤกษ์เกม</div>
+      <div class="meta">
+        <div class="note-top"><?php echo htmlspecialchars($colorLabel, ENT_QUOTES, 'UTF-8'); ?></div>
+        <div>ระดับชั้น <?php echo htmlspecialchars($roomLabel, ENT_QUOTES, 'UTF-8'); ?></div>
+      </div>
+
+      <table>
+        <thead>
+          <tr class="hdr-top">
+            <th class="w-code" rowspan="2">รหัส</th>
+            <th class="w-name" rowspan="2">ชื่อ - นามสกุล</th>
+            <th class="w-num"  rowspan="2">เลขที่</th>
+            <th class="w-chk" colspan="10"> </th>
+          </tr>
+          <tr class="hdr-btm">
+            <?php for ($i=0;$i<10;$i++): ?>
+              <th class="w-chk"></th>
+            <?php endfor; ?>
+          </tr>
+        </thead>
+        <tbody>
+        <?php foreach ($students as $st): ?>
+          <tr>
+            <td class="w-code td-center"><?php echo htmlspecialchars($st['student_code'] ?? '', ENT_QUOTES, 'UTF-8'); ?></td>
+            <td class="w-name"><?php
+              $fn = trim(($st['first_name'] ?? '') . ' ' . ($st['last_name'] ?? ''));
+              echo htmlspecialchars($fn, ENT_QUOTES, 'UTF-8');
+            ?></td>
+            <td class="w-num td-center"><?php echo htmlspecialchars($st['number_in_room'] ?? '', ENT_QUOTES, 'UTF-8'); ?></td>
+            <?php for ($i=0;$i<10;$i++): ?>
+              <td class="w-chk">&nbsp;</td>
+            <?php endfor; ?>
+          </tr>
+        <?php endforeach; ?>
+        </tbody>
+      </table>
+      <?php
+      return ob_get_clean();
+    };
+
+    // ประกอบทุกหน้าตามห้อง
+    $htmlPages = [];
+    if (!empty($byRoom)) {
+      foreach ($byRoom as $roomKey => $list) {
+        $htmlPages[] = $renderRoom($roomKey, $list);
+      }
+    } else {
+      $htmlPages[] = '<div class="title">ใบเช็คชื่อนักกีฬา</div>
+                      <div class="meta">สี '.htmlspecialchars($color,ENT_QUOTES,'UTF-8').' — ไม่มีข้อมูล</div>';
     }
 
-    // สี heading ทางซ้าย (แสดงข้อความเท่านั้น)
-    $colorLabel = 'สี ' . $color . ' ' . $yearName; // เพิ่มปีการศึกษา
+    // ครอบ HTML + CSS
+    $html = '<!doctype html><html><head><meta charset="utf-8">' .
+            '<style>'.$css.'</style></head><body>';
 
-    ob_start();
-    ?>
-    <div class="title">ใบเช็คชื่อนักกีฬา การแข่งขันกีฬาสีราชพฤกษ์เกม</div>
-    <div class="meta">
-      <div class="note-top"><?php echo htmlspecialchars($colorLabel, ENT_QUOTES, 'UTF-8'); ?></div>
-      <div>ระดับชั้น <?php echo htmlspecialchars($roomLabel, ENT_QUOTES, 'UTF-8'); ?></div>
-    </div>
-
-    <table>
-      <thead>
-        <tr class="hdr-top">
-          <th class="w-code" rowspan="2">รหัส</th>
-          <th class="w-name" rowspan="2">ชื่อ - นามสกุล</th>
-          <th class="w-num"  rowspan="2">เลขที่</th>
-          <th class="w-chk" colspan="10"> </th>
-        </tr>
-        <tr class="hdr-btm">
-          <?php for ($i=0;$i<10;$i++): ?>
-            <th class="w-chk"></th>
-          <?php endfor; ?>
-        </tr>
-      </thead>
-      <tbody>
-      <?php foreach ($students as $st): ?>
-        <tr>
-          <td class="w-code td-center"><?php echo htmlspecialchars($st['student_code'] ?? '', ENT_QUOTES, 'UTF-8'); ?></td>
-          <td class="w-name"><?php
-            $fn = trim(($st['first_name'] ?? '') . ' ' . ($st['last_name'] ?? ''));
-            echo htmlspecialchars($fn, ENT_QUOTES, 'UTF-8');
-          ?></td>
-          <td class="w-num td-center"><?php echo htmlspecialchars($st['number_in_room'] ?? '', ENT_QUOTES, 'UTF-8'); ?></td>
-          <?php for ($i=0;$i<10;$i++): ?>
-            <td class="w-chk">&nbsp;</td>
-          <?php endfor; ?>
-        </tr>
-      <?php endforeach; ?>
-      </tbody>
-    </table>
-    <?php
-    return ob_get_clean();
-  };
-
-  // ประกอบทุกหน้าตามห้อง
-  $htmlPages = [];
-  if (!empty($byRoom)) {
-    foreach ($byRoom as $roomKey => $list) {
-      $htmlPages[] = $renderRoom($roomKey, $list);
+    $total = count($htmlPages);
+    foreach ($htmlPages as $idx => $pageHtml) {
+      $html .= $pageHtml;
+      if ($idx < $total-1) $html .= '<div class="page-break"></div>';
     }
-  } else {
-    // ไม่มีนักเรียนสีนี้เลย: ยิงหน้าเปล่าพร้อมข้อความ
-    $htmlPages[] = '<div class="title">ใบเช็คชื่อนักกีฬา</div>
-                    <div class="meta">สี '.htmlspecialchars($color,ENT_QUOTES,'UTF-8').' — ไม่มีข้อมูล</div>';
+    $html .= '</body></html>';
+
+    // สร้าง PDF
+    $options = new Options();
+    $options->set('isRemoteEnabled', true);
+    $options->set('isHtml5ParserEnabled', true);
+    $options->set('defaultFont', $fontFamily);
+    $options->set('isFontSubsettingEnabled', true);
+    $options->set('chroot', $basePath);
+    
+    // ✅ ปิด debug mode บน production
+    $options->set('debugKeepTemp', false);
+    $options->set('debugCss', false);
+    $options->set('debugLayout', false);
+
+    $dompdf = new Dompdf($options);
+    $dompdf->setBasePath($basePath);
+    $dompdf->loadHtml($html, 'UTF-8');
+    $dompdf->setPaper('A4', 'portrait');
+    $dompdf->render();
+
+    $fname = 'signsheet_'.$color.'_'.date('Ymd').'.pdf';
+    $dompdf->stream($fname, ['Attachment' => true]);
+    exit;
+
+  } catch (Exception $e) {
+    // ✅ แสดง error ให้ชัดเจน
+    error_log('PDF Generation Error: ' . $e->getMessage());
+    die('เกิดข้อผิดพลาด: ' . htmlspecialchars($e->getMessage()));
   }
-
-  // ครอบ HTML + CSS
-  $html = '<!doctype html><html><head><meta charset="utf-8">' .
-          '<style>'.$css.'</style></head><body>';
-
-  // วางเนื้อหาแต่ละหน้า
-  $total = count($htmlPages);
-  foreach ($htmlPages as $idx => $pageHtml) {
-    $html .= $pageHtml;
-    if ($idx < $total-1) $html .= '<div class="page-break"></div>';
-  }
-  $html .= '</body></html>';
-
-  // สร้าง PDF
-  $options = new Options();
-  $options->set('isRemoteEnabled', true);
-  $options->set('defaultFont', 'THSarabunNew');
-
-  $dompdf = new Dompdf($options);
-  $dompdf->setBasePath($basePath);
-  $dompdf->loadHtml($html, 'UTF-8');
-  $dompdf->setPaper('A4', 'portrait');
-  $dompdf->render();
-
-  $fname = 'signsheet_'.$color.'.pdf';
-  $dompdf->stream($fname, ['Attachment' => true]); // เปลี่ยนเป็น true เพื่อดาวน์โหลด
-  exit;
 }
 
 // ===== Action: export sports list =====
@@ -813,7 +838,7 @@ include __DIR__ . '/../includes/navbar.php';
       <h4 class="mb-1">📄 รายงานเอกสาร</h4>
       <p class="text-muted mb-0 small">ดาวน์โหลดเอกสาร PDF สำหรับการจัดการกีฬาสี</p>
     </div>
-    <span class="badge bg-primary">ปี <?= htmlspecialchars($yearName ?? '', ENT_QUOTES, 'UTF-8') ?></span>
+    <span class="badge bg-primary">> <?= htmlspecialchars($yearName ?? '', ENT_QUOTES, 'UTF-8') ?></span>
   </div>
 
   <!-- สรุปจำนวนเหรียญทั้งหมด -->

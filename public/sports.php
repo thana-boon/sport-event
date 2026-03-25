@@ -13,6 +13,20 @@ $messages = [];
 
 function e($s){ return htmlspecialchars($s, ENT_QUOTES, 'UTF-8'); }
 
+// Migration: เพิ่มคอลัมน์ min_participants ถ้ายังไม่มี
+try {
+  $pdo->exec("ALTER TABLE sports ADD COLUMN min_participants INT DEFAULT NULL AFTER team_size");
+} catch (PDOException $e) {
+  // คอลัมน์มีอยู่แล้ว
+}
+
+// Migration: อัปเดตข้อมูลเก่าให้ min_participants = team_size ถ้ายังเป็น NULL
+try {
+  $pdo->exec("UPDATE sports SET min_participants = team_size WHERE min_participants IS NULL");
+} catch (PDOException $e) {
+  // ignore
+}
+
 $yearId     = active_year_id($pdo);
 $prevYearId = previous_year_id($pdo);
 if (!$yearId) {
@@ -74,6 +88,8 @@ if ($action === 'create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
   $gender= trim($_POST['gender'] ?? 'รวม');
   $ptype = trim($_POST['participant_type'] ?? 'เดี่ยว');
   $size  = max(1, (int)($_POST['team_size'] ?? 1));
+  $minSize = (int)($_POST['min_participants'] ?? 0);
+  if ($minSize <= 0 || $minSize > $size) $minSize = $size; // ถ้าไม่ระบุหรือมากเกิน ให้เท่ากับ max
   $grades= normalizeGrades($_POST['grade_levels'] ?? '');
   $active= isset($_POST['is_active']) ? 1 : 0;
 
@@ -90,18 +106,32 @@ if ($action === 'create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
       $catNameStmt->execute([$catId]);
       $catName = $catNameStmt->fetchColumn();
       
-      $stmt = $pdo->prepare("INSERT INTO sports(year_id,category_id,name,gender,participant_type,team_size,grade_levels,is_active)
-                             VALUES(?,?,?,?,?,?,?,?)");
-      $stmt->execute([$yearId,$catId,$name,$gender,$ptype,$size,$grades,$active]);
+      $stmt = $pdo->prepare("INSERT INTO sports(year_id,category_id,name,gender,participant_type,team_size,min_participants,grade_levels,is_active)
+                             VALUES(?,?,?,?,?,?,?,?,?)");
+      $stmt->execute([$yearId,$catId,$name,$gender,$ptype,$size,$minSize,$grades,$active]);
       $insertedId = $pdo->lastInsertId();
       
       // 🔥 LOG: เพิ่มกีฬาสำเร็จ
       log_activity('CREATE', 'sports', $insertedId, 
-        sprintf("เพิ่มกีฬา: %s | ประเภท: %s | เพศ: %s | รูปแบบ: %s | จำนวน: %d | ชั้น: %s | สถานะ: %s | ปี ID:%d",
-          $name, $catName, $gender, $ptype, $size, $grades, 
+        sprintf("เพิ่มกีฬา: %s | ประเภท: %s | เพศ: %s | รูปแบบ: %s | จำนวน: %d (ขั้นต่ำ:%d) | ชั้น: %s | สถานะ: %s | ปี ID:%d",
+          $name, $catName, $gender, $ptype, $size, $minSize, $grades, 
           $active ? 'เปิด' : 'ปิด', $yearId));
       
-      $messages[]='เพิ่มกีฬาสำเร็จ';
+      // เก็บข้อความไว้ใน session
+      $_SESSION['success_message'] = 'เพิ่มกีฬาเรียบร้อย';
+      
+      // Redirect กลับพร้อม filter จาก session
+      $redirectParams = [];
+      if (!empty($_SESSION['sports_filter'])) {
+        $savedFilter = $_SESSION['sports_filter'];
+        if (!empty($savedFilter['category_id'])) $redirectParams['category_id'] = $savedFilter['category_id'];
+        if (!empty($savedFilter['gender'])) $redirectParams['gender'] = $savedFilter['gender'];
+        if (!empty($savedFilter['participant_type'])) $redirectParams['participant_type'] = $savedFilter['participant_type'];
+        if (!empty($savedFilter['q'])) $redirectParams['q'] = $savedFilter['q'];
+      }
+      $redirectUrl = BASE_URL . '/sports.php' . ($redirectParams ? '?' . http_build_query($redirectParams) : '');
+      header('Location: ' . $redirectUrl);
+      exit;
     } catch(Throwable $e) {
       // 🔥 LOG: เพิ่มกีฬาไม่สำเร็จ
       log_activity('ERROR', 'sports', null, 
@@ -121,6 +151,8 @@ if ($action === 'update' && $_SERVER['REQUEST_METHOD'] === 'POST') {
   $gender= trim($_POST['gender'] ?? 'รวม');
   $ptype = trim($_POST['participant_type'] ?? 'เดี่ยว');
   $size  = max(1, (int)($_POST['team_size'] ?? 1));
+  $minSize = (int)($_POST['min_participants'] ?? 0);
+  if ($minSize <= 0 || $minSize > $size) $minSize = $size;
   $grades= normalizeGrades($_POST['grade_levels'] ?? '');
   $active= isset($_POST['is_active']) ? 1 : 0;
 
@@ -135,7 +167,7 @@ if ($action === 'update' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
       // ดึงข้อมูลเดิมก่อนแก้ไข
       $oldStmt = $pdo->prepare("
-        SELECT s.name, s.gender, s.participant_type, s.team_size, s.grade_levels, s.is_active,
+        SELECT s.name, s.gender, s.participant_type, s.team_size, s.min_participants, s.grade_levels, s.is_active,
                sc.name AS cat_name
         FROM sports s
         LEFT JOIN sport_categories sc ON sc.id = s.category_id
@@ -150,9 +182,9 @@ if ($action === 'update' && $_SERVER['REQUEST_METHOD'] === 'POST') {
       $newCatName = $catNameStmt->fetchColumn();
       
       $stmt = $pdo->prepare("UPDATE sports
-        SET category_id=?, name=?, gender=?, participant_type=?, team_size=?, grade_levels=?, is_active=?
+        SET category_id=?, name=?, gender=?, participant_type=?, team_size=?, min_participants=?, grade_levels=?, is_active=?
         WHERE id=? AND year_id=?");
-      $stmt->execute([$catId,$name,$gender,$ptype,$size,$grades,$active,$id,$yearId]);
+      $stmt->execute([$catId,$name,$gender,$ptype,$size,$minSize,$grades,$active,$id,$yearId]);
       
       // 🔥 LOG: แก้ไขกีฬาสำเร็จ
       if ($oldData) {
@@ -162,6 +194,7 @@ if ($action === 'update' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($oldData['gender'] !== $gender) $changes[] = "เพศ: {$oldData['gender']} → {$gender}";
         if ($oldData['participant_type'] !== $ptype) $changes[] = "รูปแบบ: {$oldData['participant_type']} → {$ptype}";
         if ((int)$oldData['team_size'] !== $size) $changes[] = "จำนวน: {$oldData['team_size']} → {$size}";
+        if ((int)($oldData['min_participants'] ?? $oldData['team_size']) !== $minSize) $changes[] = "ขั้นต่ำ: {$oldData['min_participants']} → {$minSize}";
         if ($oldData['grade_levels'] !== $grades) $changes[] = "ชั้น: {$oldData['grade_levels']} → {$grades}";
         if ((int)$oldData['is_active'] !== $active) {
           $changes[] = "สถานะ: " . ((int)$oldData['is_active'] ? 'เปิด' : 'ปิด') . " → " . ($active ? 'เปิด' : 'ปิด');
@@ -177,7 +210,21 @@ if ($action === 'update' && $_SERVER['REQUEST_METHOD'] === 'POST') {
           sprintf("แก้ไขกีฬา ID:%d → %s | ปี ID:%d", $id, $name, $yearId));
       }
       
-      $messages[]='แก้ไขสำเร็จ';
+      // เก็บข้อความไว้ใน session
+      $_SESSION['success_message'] = 'แก้ไขเรียบร้อย';
+      
+      // Redirect กลับพร้อม filter จาก session
+      $redirectParams = [];
+      if (!empty($_SESSION['sports_filter'])) {
+        $savedFilter = $_SESSION['sports_filter'];
+        if (!empty($savedFilter['category_id'])) $redirectParams['category_id'] = $savedFilter['category_id'];
+        if (!empty($savedFilter['gender'])) $redirectParams['gender'] = $savedFilter['gender'];
+        if (!empty($savedFilter['participant_type'])) $redirectParams['participant_type'] = $savedFilter['participant_type'];
+        if (!empty($savedFilter['q'])) $redirectParams['q'] = $savedFilter['q'];
+      }
+      $redirectUrl = BASE_URL . '/sports.php' . ($redirectParams ? '?' . http_build_query($redirectParams) : '');
+      header('Location: ' . $redirectUrl);
+      exit;
     } catch(Throwable $e) {
       // 🔥 LOG: แก้ไขกีฬาไม่สำเร็จ
       log_activity('ERROR', 'sports', $id, 
@@ -221,7 +268,21 @@ if ($action === 'delete' && $_SERVER['REQUEST_METHOD'] === 'POST') {
           sprintf("ลบกีฬา ID:%d | ปี ID:%d", $id, $yearId));
       }
       
-      $messages[]='ลบสำเร็จ';
+      // เก็บข้อความไว้ใน session
+      $_SESSION['success_message'] = 'ลบเรียบร้อย';
+      
+      // Redirect กลับพร้อม filter จาก session
+      $redirectParams = [];
+      if (!empty($_SESSION['sports_filter'])) {
+        $savedFilter = $_SESSION['sports_filter'];
+        if (!empty($savedFilter['category_id'])) $redirectParams['category_id'] = $savedFilter['category_id'];
+        if (!empty($savedFilter['gender'])) $redirectParams['gender'] = $savedFilter['gender'];
+        if (!empty($savedFilter['participant_type'])) $redirectParams['participant_type'] = $savedFilter['participant_type'];
+        if (!empty($savedFilter['q'])) $redirectParams['q'] = $savedFilter['q'];
+      }
+      $redirectUrl = BASE_URL . '/sports.php' . ($redirectParams ? '?' . http_build_query($redirectParams) : '');
+      header('Location: ' . $redirectUrl);
+      exit;
     } catch(Throwable $e) {
       // 🔥 LOG: ลบกีฬาไม่สำเร็จ
       log_activity('ERROR', 'sports', $id, 
@@ -285,11 +346,17 @@ if ($action === 'delete_all' && $_SERVER['REQUEST_METHOD'] === 'POST') {
               sprintf("⚠️ ลบกีฬาทั้งหมด: กีฬา %d รายการ | ลงทะเบียน: %d | กรีฑา: %d | ผลแข่งขัน: %d | ปี ID:%d",
                 $delSports, $delReg, $delAth, $delTrack, $yearId));
             
-            $messages[] = "✅ ลบข้อมูลเรียบร้อย:<br>
-                          - กีฬา: {$delSports} รายการ<br>
-                          - การลงทะเบียน: {$delReg} รายการ<br>
-                          - กรีฑา (athletics_events): {$delAth} รายการ<br>
-                          - ผลการแข่งขัน (track_results): {$delTrack} รายการ";
+            // Redirect กลับพร้อม filter parameters
+            $redirectParams = [];
+            if (!empty($_POST['return_category_id'])) $redirectParams['category_id'] = $_POST['return_category_id'];
+            if (!empty($_POST['return_gender'])) $redirectParams['gender'] = $_POST['return_gender'];
+            if (!empty($_POST['return_participant_type'])) $redirectParams['participant_type'] = $_POST['return_participant_type'];
+            if (!empty($_POST['return_q'])) $redirectParams['q'] = $_POST['return_q'];
+            if (!empty($_POST['return_page'])) $redirectParams['page'] = $_POST['return_page'];
+            $redirectParams['success'] = '1';
+            $queryString = http_build_query($redirectParams);
+            header('Location: ' . BASE_URL . '/sports.php' . ($queryString ? '?' . $queryString : ''));
+            exit;
          } catch (Throwable $e) {
             $pdo->rollBack();
             
@@ -311,9 +378,9 @@ if ($action === 'copy_prev' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $errors[]='ไม่พบปีการศึกษาก่อนหน้า';
   } else {
     try {
-      // 1. ดึงข้อมูลจากปีที่แล้ว (เหมือน CSV Export)
+      // 1. ดึงข้อมูลจากปีที่แล้ว (รวม min_participants)
       $stmt = $pdo->prepare("
-        SELECT s.name, s.gender, sc.name AS cat_name, s.participant_type, s.team_size, s.grade_levels
+        SELECT s.name, s.gender, sc.name AS cat_name, s.participant_type, s.team_size, s.min_participants, s.grade_levels
         FROM sports s
         JOIN sport_categories sc ON sc.id = s.category_id
         WHERE s.year_id = ?
@@ -343,6 +410,7 @@ if ($action === 'copy_prev' && $_SERVER['REQUEST_METHOD'] === 'POST') {
           $catName= trim($row['cat_name']);
           $ptype  = trim($row['participant_type']);
           $size   = (int)$row['team_size'];
+          $minSize= (int)($row['min_participants'] ?? $size); // ถ้าไม่มี ให้เท่ากับ team_size
           $grades = normalizeGrades($row['grade_levels']);
           
           // ตรวจสอบข้อมูลขั้นต่ำ
@@ -358,15 +426,15 @@ if ($action === 'copy_prev' && $_SERVER['REQUEST_METHOD'] === 'POST') {
           $exists = $chk->fetchColumn();
           
           if ($exists) {
-            // อัปเดตข้อมูล (category, team_size, grade_levels, is_active=1)
-            $stmt = $pdo->prepare("UPDATE sports SET category_id=?, team_size=?, grade_levels=?, is_active=1 WHERE id=?");
-            $stmt->execute([$catId, $size, $grades, $exists]);
+            // อัปเดตข้อมูล (category, team_size, min_participants, grade_levels, is_active=1)
+            $stmt = $pdo->prepare("UPDATE sports SET category_id=?, team_size=?, min_participants=?, grade_levels=?, is_active=1 WHERE id=?");
+            $stmt->execute([$catId, $size, $minSize, $grades, $exists]);
             $upd++;
           } else {
             // เพิ่มใหม่
-            $stmt = $pdo->prepare("INSERT INTO sports(year_id, category_id, name, gender, participant_type, team_size, grade_levels, is_active)
-                                   VALUES(?,?,?,?,?,?,?,1)");
-            $stmt->execute([$yearId, $catId, $name, $gender, $ptype, $size, $grades]);
+            $stmt = $pdo->prepare("INSERT INTO sports(year_id, category_id, name, gender, participant_type, team_size, min_participants, grade_levels, is_active)
+                                   VALUES(?,?,?,?,?,?,?,?,1)");
+            $stmt->execute([$yearId, $catId, $name, $gender, $ptype, $size, $minSize, $grades]);
             $ins++;
           }
         }
@@ -378,11 +446,17 @@ if ($action === 'copy_prev' && $_SERVER['REQUEST_METHOD'] === 'POST') {
           sprintf("คัดลอกกีฬาจากปีที่แล้ว: ทั้งหมด %d รายการ | เพิ่มใหม่: %d | อัปเดต: %d | ข้าม: %d | จาก ปี ID:%d → ปี ID:%d",
             count($prevSports), $ins, $upd, $skip, $prevYearId, $yearId));
         
-        $messages[] = "✅ คัดลอกจากปีที่แล้วเรียบร้อย:<br>
-                      - ปีที่แล้ว (ID: {$prevYearId}) มีกีฬา " . count($prevSports) . " รายการ<br>
-                      - เพิ่มใหม่: <strong>{$ins}</strong> รายการ<br>
-                      - อัปเดต: {$upd} รายการ<br>
-                      - ข้าม: {$skip} รายการ";
+        // Redirect กลับพร้อม filter parameters
+        $redirectParams = [];
+        if (!empty($_POST['return_category_id'])) $redirectParams['category_id'] = $_POST['return_category_id'];
+        if (!empty($_POST['return_gender'])) $redirectParams['gender'] = $_POST['return_gender'];
+        if (!empty($_POST['return_participant_type'])) $redirectParams['participant_type'] = $_POST['return_participant_type'];
+        if (!empty($_POST['return_q'])) $redirectParams['q'] = $_POST['return_q'];
+        if (!empty($_POST['return_page'])) $redirectParams['page'] = $_POST['return_page'];
+        $redirectParams['success'] = '1';
+        $queryString = http_build_query($redirectParams);
+        header('Location: ' . BASE_URL . '/sports.php' . ($queryString ? '?' . $queryString : ''));
+        exit;
       }
     } catch (Throwable $e) {
       if ($pdo->inTransaction()) $pdo->rollBack();
@@ -407,9 +481,9 @@ if (($_GET['action'] ?? '') === 'template') {
   header('Content-Disposition: attachment; filename="sports_template.csv"');
   echo "\xEF\xBB\xBF";
   $out=fopen('php://output','w');
-  // หัวคอลัมน์ตามภาพ: กีฬา, เพศ, ประเภทกีฬา, ประเภทผู้เข้แข่งขัน, จำนวน, ระดับชั้น
-  fputcsv($out, ['กีฬา','เพศ','ประเภทกีฬา','ประเภทผู้เข้แข่งขัน','จำนวน','ระดับชั้น']);
-  fputcsv($out, ['ฟุตบอล','ช','กีฬากลาง','ทีม',7,'ม1,ม2,ม3']);
+  // หัวคอลัมน์ตามภาพ: กีฬา, เพศ, ประเภทกีฬา, ประเภทผู้เข้แข่งขัน, จำนวนสูงสุด, จำนวนขั้นต่ำ, ระดับชั้น
+  fputcsv($out, ['กีฬา','เพศ','ประเภทกีฬา','ประเภทผู้เข้แข่งขัน','จำนวนสูงสุด','จำนวนขั้นต่ำ','ระดับชั้น']);
+  fputcsv($out, ['ฟุตบอล','ช','กีฬากลาง','ทีม',15,11,'ม็1,ม็2,ม็3']);
   fclose($out); exit;
 }
 
@@ -428,13 +502,14 @@ if (($_GET['action'] ?? '') === 'export') {
   header('Content-Disposition: attachment; filename="sports_'.$yearId.'.csv"');
   echo "\xEF\xBB\xBF";
   $out=fopen('php://output','w');
-  fputcsv($out, ['กีฬา','เพศ','ประเภทกีฬา','ประเภทผู้เข้าร่วม','จำนวน','ระดับชั้น']);
-  $q = $pdo->prepare("SELECT s.name, s.gender, sc.name AS cat_name, s.participant_type, s.team_size, s.grade_levels
+  fputcsv($out, ['กีฬา','เพศ','ประเภทกีฬา','ประเภทผู้เข้าร่วม','จำนวนสูงสุด','จำนวนขั้นต่ำ','ระดับชั้น']);
+  $q = $pdo->prepare("SELECT s.name, s.gender, sc.name AS cat_name, s.participant_type, s.team_size, s.min_participants, s.grade_levels
                       FROM sports s JOIN sport_categories sc ON sc.id=s.category_id
                       WHERE s.year_id=? ORDER BY sc.name, s.name");
   $q->execute([$yearId]);
   while($r=$q->fetch(PDO::FETCH_ASSOC)){
-    fputcsv($out, [$r['name'],$r['gender'],$r['cat_name'],$r['participant_type'],$r['team_size'],$r['grade_levels']]);
+    $minPart = $r['min_participants'] ?? $r['team_size'];
+    fputcsv($out, [$r['name'],$r['gender'],$r['cat_name'],$r['participant_type'],$r['team_size'],$minPart,$r['grade_levels']]);
   }
   fclose($out); exit;
 }
@@ -452,10 +527,15 @@ if ($action==='import_csv' && $_SERVER['REQUEST_METHOD']==='POST') {
       $first=fgets($h);
       if(substr($first,0,3)==="\xEF\xBB\xBF") $first=substr($first,3);
       $header=str_getcsv($first);
-      $expected=['กีฬา','เพศ','ประเภทกีฬา','ประเภทผู้เข้แข่งขัน','จำนวน','ระดับชั้น'];
+      $expected=['กีฬา','เพศ','ประเภทกีฬา','ประเภทผู้เข้แข่งขัน','จำนวนสูงสุด','จำนวนขั้นต่ำ','ระดับชั้น'];
+      // รองรับทั้งรูปแบบเก่า (ไม่มีจำนวนขั้นต่ำ) และใหม่
+      $expectedOld=['กีฬา','เพศ','ประเภทกีฬา','ประเภทผู้เข้แข่งขัน','จำนวน','ระดับชั้น'];
       $norm=fn($a)=>array_map('trim',$a);
-      if($norm($header)!==$expected){
-        $errors[]='หัวคอลัมน์ไม่ตรงเทมเพลต (ต้องการ: '.implode(', ',$expected).')';
+      $isNewFormat = ($norm($header)===$expected);
+      $isOldFormat = ($norm($header)===$expectedOld);
+      
+      if(!$isNewFormat && !$isOldFormat){
+        $errors[]='หัวคอลัมน์ไม่ตรงเทมเพลต (ต้องการ: '.implode(', ',$expected).' หรือ '.implode(', ',$expectedOld).')';
       }else{
         $ins=0;$upd=0;$skip=0;
 
@@ -466,10 +546,20 @@ if ($action==='import_csv' && $_SERVER['REQUEST_METHOD']==='POST') {
         $pdo->beginTransaction();
         try{
           while(($row=fgetcsv($h))!==false){
-            if(count($row)<6){ $skip++; continue; }
-            [$name,$gender,$catName,$ptype,$sizeRaw,$grades]=$row;
+            if($isNewFormat && count($row)<7){ $skip++; continue; }
+            if($isOldFormat && count($row)<6){ $skip++; continue; }
+            
+            if($isNewFormat){
+              [$name,$gender,$catName,$ptype,$sizeRaw,$minSizeRaw,$grades]=$row;
+              $minSize=(int)$minSizeRaw;
+            }else{
+              [$name,$gender,$catName,$ptype,$sizeRaw,$grades]=$row;
+              $minSize=0; // จะตั้งเป็น team_size ภายหลัง
+            }
+            
             $name=trim($name); $gender=trim($gender); $catName=trim($catName); $ptype=trim($ptype);
             $size=(int)$sizeRaw; if($size<=0) $size=1;
+            if($minSize<=0 || $minSize>$size) $minSize=$size;
             $grades=normalizeGrades($grades);
 
             // ตรวจสอบข้อมูลขั้นต่ำ
@@ -484,15 +574,15 @@ if ($action==='import_csv' && $_SERVER['REQUEST_METHOD']==='POST') {
             $exists=$chk->fetchColumn();
 
             if($exists){
-              // อัปเดตข้อมูล (category, team_size, grade_levels, is_active=1)
-              $stmt=$pdo->prepare("UPDATE sports SET category_id=?, team_size=?, grade_levels=?, is_active=1 WHERE id=?");
-              $stmt->execute([$catId,$size,$grades,$exists]);
+              // อัปเดตข้อมูล (category, team_size, min_participants, grade_levels, is_active=1)
+              $stmt=$pdo->prepare("UPDATE sports SET category_id=?, team_size=?, min_participants=?, grade_levels=?, is_active=1 WHERE id=?");
+              $stmt->execute([$catId,$size,$minSize,$grades,$exists]);
               $upd++;
             }else{
               // เพิ่มใหม่
-              $stmt=$pdo->prepare("INSERT INTO sports(year_id, category_id, name, gender, participant_type, team_size, grade_levels, is_active)
-                                   VALUES(?,?,?,?,?,?,?,1)");
-              $stmt->execute([$yearId,$catId,$name,$gender,$ptype,$size,$grades]);
+              $stmt=$pdo->prepare("INSERT INTO sports(year_id, category_id, name, gender, participant_type, team_size, min_participants, grade_levels, is_active)
+                                   VALUES(?,?,?,?,?,?,?,?,1)");
+              $stmt->execute([$yearId,$catId,$name,$gender,$ptype,$size,$minSize,$grades]);
               $ins++;
             }
           }
@@ -527,6 +617,16 @@ $ptypeF    = trim($_GET['participant_type'] ?? '');
 $qtext     = trim($_GET['q'] ?? '');
 $page      = max(1,(int)($_GET['page'] ?? 1));
 $perPage   = 20;
+
+// ถ้ามี filter ใน URL ให้เก็บลง session
+if ($catFilter > 0 || $genderF !== '' || $ptypeF !== '' || $qtext !== '') {
+    $_SESSION['sports_filter'] = [
+        'category_id' => $catFilter,
+        'gender' => $genderF,
+        'participant_type' => $ptypeF,
+        'q' => $qtext
+    ];
+}
 
 $where = ["s.year_id=:y"];
 $params = [':y'=>$yearId];
@@ -570,6 +670,9 @@ include __DIR__ . '/../includes/navbar.php';
 
           <?php if ($errors): ?><div class="alert alert-danger"><?= implode('<br>', array_map('e',$errors)); ?></div><?php endif; ?>
           <?php if ($messages): ?><div class="alert alert-success"><?= implode('<br>', $messages); ?></div><?php endif; ?>
+          <?php if (!empty($_SESSION['success_message'])): ?>
+            <div class="alert alert-success"><?= e($_SESSION['success_message']); unset($_SESSION['success_message']); ?></div>
+          <?php endif; ?>
 
           <form method="post" action="<?php echo BASE_URL; ?>/sports.php" class="row g-2">
             <input type="hidden" name="action" value="create">
@@ -603,11 +706,16 @@ include __DIR__ . '/../includes/navbar.php';
               </select>
             </div>
             <div class="col-6">
-              <label class="form-label">จำนวนสมาชิก/ทีม</label>
-              <input type="number" class="form-control" name="team_size" min="1" value="1" required>
-              <div class="form-text">เดี่ยว = 1</div>
+              <label class="form-label">จำนวนสูงสุดที่รับ</label>
+              <input type="number" class="form-control" name="team_size" id="team_size_create" min="1" value="1" required>
+              <div class="form-text">จำนวนผู้เล่นสูงสุดที่รับต่อสี</div>
             </div>
             <div class="col-6">
+              <label class="form-label">จำนวนขั้นต่ำ (เว้นว่างถ้าเท่ากับสูงสุด)</label>
+              <input type="number" class="form-control" name="min_participants" id="min_participants_create" min="1" placeholder="ไม่ระบุ = เท่ากับจำนวนสูงสุด">
+              <div class="form-text">จำนวนขั้นต่ำที่ต้องลงทะเบียนเพื่อให้แข่งได้</div>
+            </div>
+            <div class="col-12">
               <label class="form-label">ระดับชั้นที่อนุญาต</label>
               <input type="text" class="form-control" name="grade_levels" placeholder="ป4,ป5 หรือ ม1,ม2,ม3" required>
             </div>
@@ -661,7 +769,7 @@ include __DIR__ . '/../includes/navbar.php';
       </div>
 
       <?php if ($prevYearId): ?>
-      <form class="mt-3" method="post" action="<?php echo BASE_URL; ?>/sports.php" onsubmit="return confirm('คัดลอกกีฬาจากปีที่แล้วมาปีนี้?');">
+      <form class="mt-3" method="post" action="<?php echo BASE_URL; ?>/sports.php" onsubmit="return confirmCopyPrev(event);">
         <input type="hidden" name="action" value="copy_prev">
         <button class="btn btn-outline-secondary w-100">คัดลอกจากปีที่แล้ว</button>
       </form>
@@ -722,7 +830,7 @@ include __DIR__ . '/../includes/navbar.php';
                   <th>ประเภทกีฬา</th>
                   <th>เพศ</th>
                   <th>รูปแบบ</th>
-                  <th class="text-center">จำนวน</th>
+                  <th class="text-center">จำนวน (ขั้นต่ำ-สูงสุด)</th>
                   <th>ระดับชั้น</th>
                   <th class="text-center" style="width:120px;">สถานะ</th>
                   <th style="width:220px;">จัดการ</th>
@@ -737,7 +845,13 @@ include __DIR__ . '/../includes/navbar.php';
                     <td><?= e($s['cat_name']); ?></td>
                     <td><?= e($s['gender']); ?></td>
                     <td><?= e($s['participant_type']); ?></td>
-                    <td class="text-center"><?= (int)$s['team_size']; ?></td>
+                    <td class="text-center">
+                      <?php 
+                        $min = (int)($s['min_participants'] ?? $s['team_size']);
+                        $max = (int)$s['team_size'];
+                        echo ($min === $max) ? $max : "{$min}-{$max}";
+                      ?>
+                    </td>
                     <td><?= e($s['grade_levels']); ?></td>
                     <td class="text-center">
                       <?= ((int)$s['is_active']===1) ? '<span class="badge bg-success">เปิด</span>' : '<span class="badge bg-secondary">ปิด</span>'; ?>
@@ -752,11 +866,12 @@ include __DIR__ . '/../includes/navbar.php';
                                 data-gender="<?= e($s['gender']); ?>"
                                 data-ptype="<?= e($s['participant_type']); ?>"
                                 data-size="<?= (int)$s['team_size']; ?>"
+                                data-minsize="<?= (int)($s['min_participants'] ?? $s['team_size']); ?>"
                                 data-grades="<?= e($s['grade_levels']); ?>"
                                 data-active="<?= (int)$s['is_active']; ?>">
                           แก้ไข
                         </button>
-                        <form method="post" action="<?php echo BASE_URL; ?>/sports.php" onsubmit="return confirm('ลบรายการนี้?');">
+                        <form method="post" action="<?php echo BASE_URL; ?>/sports.php" class="delete-form" onsubmit="return confirmDelete(event);">
                           <input type="hidden" name="action" value="delete">
                           <input type="hidden" name="id" value="<?= (int)$s['id']; ?>">
                           <button class="btn btn-sm btn-outline-danger">ลบ</button>
@@ -827,10 +942,14 @@ include __DIR__ . '/../includes/navbar.php';
           </select>
         </div>
         <div class="col-6">
-          <label class="form-label">จำนวนสมาชิก/ทีม</label>
+          <label class="form-label">จำนวนสูงสุดที่รับ</label>
           <input type="number" class="form-control" id="edit-size" name="team_size" min="1" required>
         </div>
         <div class="col-6">
+          <label class="form-label">จำนวนขั้นต่ำ</label>
+          <input type="number" class="form-control" id="edit-minsize" name="min_participants" min="1" placeholder="ไม่ระบุ = เท่ากับจำนวนสูงสุด">
+        </div>
+        <div class="col-12">
           <label class="form-label">ระดับชั้นที่อนุญาต</label>
           <input type="text" class="form-control" id="edit-grades" name="grade_levels" required>
         </div>
@@ -888,7 +1007,81 @@ include __DIR__ . '/../includes/navbar.php';
 </div>
 
 <?php include __DIR__ . '/../includes/footer.php'; ?>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
+// ฟังก์ชัน SweetAlert2 สำหรับ confirm
+function confirmCopyPrev(event) {
+  event.preventDefault();
+  const form = event.target;
+  Swal.fire({
+    title: 'คัดลอกจากปีที่แล้ว?',
+    text: 'คัดลอกกีฬาจากปีที่แล้วมาปีนี้',
+    icon: 'question',
+    showCancelButton: true,
+    confirmButtonText: 'ใช่, คัดลอก',
+    cancelButtonText: 'ยกเลิก',
+    confirmButtonColor: '#667eea'
+  }).then((result) => {
+    if (result.isConfirmed) {
+      saveFiltersAndSubmit(form);
+    }
+  });
+  return false;
+}
+
+function confirmDelete(event) {
+  event.preventDefault();
+  const form = event.target;
+  Swal.fire({
+    title: 'ยืนยันการลบ?',
+    text: 'คุณต้องการลบรายการนี้หรือไม่',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonText: 'ใช่, ลบเลย',
+    cancelButtonText: 'ยกเลิก',
+    confirmButtonColor: '#dc3545'
+  }).then((result) => {
+    if (result.isConfirmed) {
+      saveFiltersAndSubmit(form);
+    }
+  });
+  return false;
+}
+
+// เก็บ filter parameters และ submit form
+function saveFiltersAndSubmit(form) {
+  const params = new URLSearchParams(window.location.search);
+  const filters = {
+    category_id: params.get('category_id') || '',
+    gender: params.get('gender') || '',
+    participant_type: params.get('participant_type') || '',
+    q: params.get('q') || '',
+    page: params.get('page') || '1'
+  };
+  
+  // เพิ่ม hidden inputs สำหรับเก็บ filter
+  Object.keys(filters).forEach(key => {
+    if (filters[key]) {
+      const input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = 'return_' + key;
+      input.value = filters[key];
+      form.appendChild(input);
+    }
+  });
+  
+  form.submit();
+}
+
+// ฟอร์มแก้ไข - เก็บ filter ก่อน submit (ไม่ใช้ SweetAlert2 เพราะเป็นแก้ไขธรรมดา)
+const editForm = document.querySelector('form[action*="sports.php"][method="post"]');
+if (editForm && editForm.querySelector('input[name="action"][value="update"]')) {
+  editForm.addEventListener('submit', function(e) {
+    e.preventDefault();
+    saveFiltersAndSubmit(this);
+  });
+}
+
 const editModal = document.getElementById('editModal');
 if (editModal) {
   editModal.addEventListener('show.bs.modal', e => {
@@ -899,6 +1092,7 @@ if (editModal) {
     document.getElementById('edit-gender').value = b.getAttribute('data-gender');
     document.getElementById('edit-ptype').value  = b.getAttribute('data-ptype');
     document.getElementById('edit-size').value   = b.getAttribute('data-size');
+    document.getElementById('edit-minsize').value = b.getAttribute('data-minsize');
     document.getElementById('edit-grades').value = b.getAttribute('data-grades');
     document.getElementById('edit-active').checked = (b.getAttribute('data-active') === '1');
   });

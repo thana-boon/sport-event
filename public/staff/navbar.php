@@ -8,13 +8,13 @@ require_once __DIR__ . '/../../lib/helpers.php';
 
 $staff = $_SESSION['staff'] ?? null;
 
-// ✅ เช็ค session timeout (30 นาที)
-$timeout = 1800; // 30 นาที
+// ✅ เช็ค session timeout (60 นาที)
+$timeout = 3600; // 60 นาที
 if (!empty($staff)) {
   if (isset($_SESSION['last_activity']) && (time() - $_SESSION['last_activity']) > $timeout) {
     // 🔥 LOG: Session timeout
     log_activity('LOGOUT', 'users', $staff['id'] ?? null, 
-      'ออกจากระบบอัตโนมัติ (session timeout 30 นาที) | Username: ' . ($staff['username'] ?? 'unknown') . ' | สี: ' . ($staff['color'] ?? '-'));
+      'ออกจากระบบอัตโนมัติ (session timeout 60 นาที) | Username: ' . ($staff['username'] ?? 'unknown') . ' | สี: ' . ($staff['color'] ?? '-'));
     
     session_unset();
     session_destroy();
@@ -24,14 +24,20 @@ if (!empty($staff)) {
   $_SESSION['last_activity'] = time();
 }
 
-// ดึงปีการศึกษาที่ Active
+// ดึงปีการศึกษาที่ Active และสถานะการลงทะเบียน
 $activeYearBe = null;
+$registrationOpen = false;
 try {
   require_once __DIR__ . '/../../config/db.php';
   $pdo = db();
   $st = $pdo->query("SELECT year_be FROM academic_years WHERE is_active=1 ORDER BY year_be DESC LIMIT 1");
   $row = $st->fetch(PDO::FETCH_ASSOC);
   if ($row) $activeYearBe = (int)$row['year_be'];
+  
+  // เช็คสถานะการลงทะเบียน
+  if (function_exists('registration_open')) {
+    $registrationOpen = registration_open($pdo);
+  }
 } catch (Throwable $e) {}
 
 // Color themes
@@ -135,7 +141,7 @@ $currentTheme = $colorThemes[$staffColor] ?? ['hex' => '#0d6efd', 'light' => '#c
           <li class="nav-item">
             <a class="nav-link <?php echo basename($_SERVER['PHP_SELF'])==='register.php'?'active':''; ?>" 
                href="<?php echo BASE_URL; ?>/staff/register.php">
-              ✍️ ลงทะเบียนกีฬา
+              <?php echo $registrationOpen ? '✍️ ลงทะเบียนกีฬา' : '👁️ ดูรายชื่อนักกีฬา'; ?>
             </a>
           </li>
           

@@ -93,26 +93,47 @@ if (!isset($_GET['export'])) {
 
 // ================= Export (PDF) Mode =================
 
+// ตรวจสอบว่ามีการเลือกกีฬาเฉพาะหรือไม่
+$selectedSportName = isset($_GET['sport_name']) ? trim($_GET['sport_name']) : '';
+
 // Sports (ordering to mirror booklet)
-$sqlSports = "
-  SELECT s.id, s.name, s.gender, s.participant_type, s.team_size, s.grade_levels,
-         c.name AS category_name
-    FROM sports s
-    JOIN sport_categories c ON c.id = s.category_id
-   WHERE s.year_id = :y
-     AND s.is_active = 1
-     AND c.name <> 'กรีฑา'
-   ORDER BY s.name ASC, c.name ASC, s.participant_type ASC, s.gender ASC
-";
-$st = $pdo->prepare($sqlSports);
-$st->execute([':y'=>$yearId]);
+if ($selectedSportName !== '') {
+  // Export ทุกรายการของกีฬาที่เลือก
+  $sqlSports = "
+    SELECT s.id, s.name, s.gender, s.participant_type, s.team_size, s.grade_levels,
+           c.name AS category_name
+      FROM sports s
+      JOIN sport_categories c ON c.id = s.category_id
+     WHERE s.year_id = :y
+       AND s.is_active = 1
+       AND c.name <> 'กรีฑา'
+       AND s.name LIKE CONCAT(:sport_name, '%')
+     ORDER BY s.name ASC, c.name ASC, s.participant_type ASC, s.gender ASC
+  ";
+  $st = $pdo->prepare($sqlSports);
+  $st->execute([':y'=>$yearId, ':sport_name'=>$selectedSportName]);
+} else {
+  // Export ทั้งหมด
+  $sqlSports = "
+    SELECT s.id, s.name, s.gender, s.participant_type, s.team_size, s.grade_levels,
+           c.name AS category_name
+      FROM sports s
+      JOIN sport_categories c ON c.id = s.category_id
+     WHERE s.year_id = :y
+       AND s.is_active = 1
+       AND c.name <> 'กรีฑา'
+     ORDER BY s.name ASC, c.name ASC, s.participant_type ASC, s.gender ASC
+  ";
+  $st = $pdo->prepare($sqlSports);
+  $st->execute([':y'=>$yearId]);
+}
 $sports = $st->fetchAll(PDO::FETCH_ASSOC);
 
 // Matches by sport
 function loadMatchesOfSport(PDO $pdo, int $yearId, int $sportId){
   $sql = "SELECT id, round_name, round_no, match_no, match_date, match_time, venue,
                  side_a_label, side_a_color, side_b_label, side_b_color,
-                 winner, score_a, score_b, status
+                 winner, score_a, score_b, status, final_date, final_time
             FROM match_pairs
            WHERE year_id = :y AND sport_id = :s
            ORDER BY round_no ASC, match_no ASC";
@@ -124,7 +145,7 @@ function loadMatchesOfSport(PDO $pdo, int $yearId, int $sportId){
 // ===== HTML + CSS (match booklet style) =====
 $html = '<!DOCTYPE html><html lang="th"><head><meta charset="utf-8">';
 $html .= '<style>
-  @page { margin: 12mm 8mm 12mm 8mm; }
+  @page { margin: 12mm 8mm 12mm 25mm; }
   .page-break { page-break-before: always; }
   @font-face {
     font-family: "THSarabunNew";
@@ -142,6 +163,8 @@ $html .= '<style>
   h1,h2,h3 { margin:0; }
   .header { display:flex; align-items:center; gap:12px; margin-bottom:2mm; }
   .header img.logo { height:38px; }
+  .datetime-cell { line-height: 1.1; font-size: 11pt; padding: 0.5mm 1px !important; }
+  .date-text { font-size: 9pt; }
   .title { font-size: 18pt; font-weight: 700; }
   .subtitle { font-size: 12pt; color:#555; }
   hr { border:0; border-top:1px solid #bbb; margin:3mm 0 2mm 0; }
@@ -272,7 +295,7 @@ foreach($sports as $sp){
     $html .= '<div class="round-label">'. e($rname) .'</div>';
     $html .= '<table><thead><tr>
                 <th style="width:10mm">คู่ที่</th>
-                <th style="width:22mm">วัน/เวลา</th>
+                <th style="width:24mm">วัน/เวลา</th>
                 <th>ทีม A</th>
                 <th style="width:13mm">สี</th>
                 <th class="small" style="width:13mm">ผล A</th>
@@ -284,14 +307,22 @@ foreach($sports as $sp){
 
     foreach ($grp['items'] as $m) {
       $dt = '';
-      if (!empty($m['match_date'])) $dt .= thai_date($m['match_date']);
-      if (!empty($m['match_time'])) $dt .= ($dt? ' ' : '') . substr($m['match_time'],0,5);
+      if (!empty($m['match_time'])) {
+        $dt = substr($m['match_time'],0,5) . ' น.';
+        if (!empty($m['match_date'])) {
+          $dt .= '<br><span class="date-text">' . thai_date($m['match_date']) . '</span>';
+        }
+      } elseif (!empty($m['match_date'])) {
+        $dt = '<span class="date-text">' . thai_date($m['match_date']) . '</span>';
+      } else {
+        $dt = '-';
+      }
       $bgA = color_bg($m['side_a_color'] ?? '');
       $bgB = color_bg($m['side_b_color'] ?? '');
 
       $html .= '<tr>
         <td class="nowrap" style="text-align:center">'. e($m['match_no']) .'</td>
-        <td class="nowrap" style="text-align:center">'. e($dt ?: '-') .'</td>
+        <td class="datetime-cell" style="text-align:center">'. $dt .'</td>
         <td style="text-align:center">'. e($m['side_a_label']) .'</td>
         <td class="cell-color" style="background:'. $bgA .'; text-align:center">'. e($m['side_a_color'] ?? '-') .'</td>
         <td class="nowrap" style="text-align:center">'. e($m['score_a'] ?? '') .'</td>
@@ -311,9 +342,23 @@ foreach($sports as $sp){
   $m1 = $firstRoundNos[0] ?? 1;
   $m2 = $firstRoundNos[1] ?? 2;
 
+  // แสดงวันเวลารอบชิง (ดึงจาก match_pairs)
+  $finalDateTime = '';
+  if (!empty($matches[0]['final_time'])) {
+    $finalDateTime = substr($matches[0]['final_time'], 0, 5) . ' น.';
+    if (!empty($matches[0]['final_date'])) {
+      $finalDateTime .= '<br><span class="date-text">' . thai_date($matches[0]['final_date']) . '</span>';
+    }
+  } elseif (!empty($matches[0]['final_date'])) {
+    $finalDateTime = '<span class="date-text">' . thai_date($matches[0]['final_date']) . '</span>';
+  } else {
+    $finalDateTime = '-';
+  }
+
   $html .= '<div class="round-label" style="margin-top:2mm">รอบชิงที่ 3</div>';
   $html .= '<table><thead><tr>
               <th style="width:18mm">รายการ</th>
+              <th style="width:24mm">วัน-เวลา</th>
               <th>ทีม/สถานะ</th>
               <th style="width:13mm">สี</th>
               <th class="small" style="width:13mm">ผล</th>
@@ -324,14 +369,16 @@ foreach($sports as $sp){
   $bg = color_bg('');
   $html .= '<tr>
     <td class="nowrap" style="text-align:center">ชิงที่ 3</td>
-    <td>ผู้แพ้คู่ที่ '. e($m1) .'</td><td style="background:'.$bg.'"></td><td></td>
-    <td>ผู้แพ้คู่ที่ '. e($m2) .'</td><td style="background:'.$bg.'"></td><td></td>
+    <td class="datetime-cell" style="text-align:center">'. $finalDateTime .'</td>
+    <td style="text-align:center">ผู้แพ้คู่ที่ '. e($m1) .'</td><td style="background:'.$bg.'"></td><td></td>
+    <td style="text-align:center">ผู้แพ้คู่ที่ '. e($m2) .'</td><td style="background:'.$bg.'"></td><td></td>
   </tr>';
   $html .= '</tbody></table>';
 
   $html .= '<div class="round-label" style="margin-top:1mm">รอบชิงชนะเลิศ</div>';
   $html .= '<table><thead><tr>
               <th style="width:18mm">รายการ</th>
+              <th style="width:24mm">วัน-เวลา</th>
               <th>ทีม/สถานะ</th>
               <th style="width:13mm">สี</th>
               <th class="small" style="width:13mm">ผล</th>
@@ -341,8 +388,9 @@ foreach($sports as $sp){
             </tr></thead><tbody>';
   $html .= '<tr>
     <td class="nowrap" style="text-align:center">ชิงชนะเลิศ</td>
-    <td>ผู้ชนะคู่ที่ '. e($m1) .'</td><td style="background:'.$bg.'"></td><td></td>
-    <td>ผู้ชนะคู่ที่ '. e($m2) .'</td><td style="background:'.$bg.'"></td><td></td>
+    <td class="datetime-cell" style="text-align:center">'. $finalDateTime .'</td>
+    <td style="text-align:center">ผู้ชนะคู่ที่ '. e($m1) .'</td><td style="background:'.$bg.'"></td><td></td>
+    <td style="text-align:center">ผู้ชนะคู่ที่ '. e($m2) .'</td><td style="background:'.$bg.'"></td><td></td>
   </tr>';
   $html .= '</tbody></table>';
 
@@ -355,12 +403,19 @@ $html .= '</body></html>';
 require_once __DIR__ . '/../vendor/autoload.php';
 $options = new Options();
 $options->set('isRemoteEnabled', true);
-$options->set('defaultFont', 'THSarabunNew'); // match booklet
+$options->set('defaultFont', 'DejaVu Sans');
+$options->set('isFontSubsettingEnabled', true);
 $options->setChroot(__DIR__); // public/ (so assets/fonts/* is accessible)
 $dompdf = new Dompdf($options);
 $dompdf->loadHtml($html, 'UTF-8');
 $dompdf->setPaper('A4', 'portrait');
 $dompdf->render();
-$filename = 'รายการแข่งขัน_'.$yearName.'.pdf';
+
+// ปรับชื่อไฟล์ตามกีฬาที่เลือก
+if ($selectedSportName !== '') {
+  $filename = 'รายการแข่งขัน_' . $selectedSportName . '_' . $yearName . '.pdf';
+} else {
+  $filename = 'รายการแข่งขัน_ทั้งหมด_' . $yearName . '.pdf';
+}
 $dompdf->stream($filename, ['Attachment' => true]);
 exit;

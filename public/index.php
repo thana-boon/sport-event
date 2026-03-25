@@ -37,7 +37,7 @@ $stReg->execute([$yearId]);
 $registeredCount = (int)$stReg->fetchColumn();
 $notRegisteredCount = max(0, $totalStudents - $registeredCount);
 
-// 4) แจ้งเตือน: ลงทะเบียนเกินโควต้า (ต่อหมวดกีฬา)
+// 4) แจ้งเตือน: ลงทะเบียนเกินโควต้า (ต่อหมวดกีฬา) - resolve max_per_student จาก category_year_settings
 $stOver = $pdo->prepare("
   SELECT
     s.id AS student_id,
@@ -46,20 +46,54 @@ $stOver = $pdo->prepare("
     s.last_name,
     sc.id AS category_id,
     sc.name AS category_name,
-    sc.max_per_student,
+    cat_limits.max_per_student,
     COUNT(*) AS registered_in_category
   FROM registrations r
   JOIN students s ON s.id = r.student_id
   JOIN sports sp ON sp.id = r.sport_id
   JOIN sport_categories sc ON sc.id = sp.category_id
-  WHERE r.year_id = ?
-  GROUP BY s.id, s.color, s.first_name, s.last_name, sc.id, sc.name, sc.max_per_student
-  HAVING COUNT(*) > sc.max_per_student
-  ORDER BY (COUNT(*) - sc.max_per_student) DESC, s.id ASC
+  JOIN (
+    SELECT 
+      sc2.id AS category_id,
+      COALESCE(cys2.max_per_student, sc2.max_per_student) AS max_per_student
+    FROM sport_categories sc2
+    LEFT JOIN category_year_settings cys2 ON cys2.category_id = sc2.id AND cys2.year_id = :y
+  ) AS cat_limits ON cat_limits.category_id = sc.id
+  WHERE r.year_id = :y
+  GROUP BY s.id, s.color, s.first_name, s.last_name, sc.id, sc.name, cat_limits.max_per_student
+  HAVING COUNT(*) > cat_limits.max_per_student
+  ORDER BY (COUNT(*) - cat_limits.max_per_student) DESC, s.id ASC
 ");
-$stOver->execute([$yearId]);
+$stOver->execute([':y' => $yearId]);
 $overRows = $stOver->fetchAll(PDO::FETCH_ASSOC);
 $overCount = count($overRows);
+
+// 5) สถิติการลงทะเบียนแต่ละสี
+// นับจำนวนคนที่ต้องลงทะเบียนทั้งหมด (รวม team_size ของทุกกีฬา)
+$totalSlotsStmt = $pdo->prepare("
+  SELECT COALESCE(SUM(CASE WHEN team_size > 0 THEN team_size ELSE 1 END), 0) 
+  FROM sports 
+  WHERE year_id = ? AND is_active = 1
+");
+$totalSlotsStmt->execute([$yearId]);
+$totalSlots = (int)$totalSlotsStmt->fetchColumn();
+
+// จำนวนคนที่แต่ละสีลงทะเบียนแล้ว
+$colorRegistration = [];
+foreach (['เขียว','ฟ้า','ชมพู','ส้ม'] as $color) {
+  $stmt = $pdo->prepare("SELECT COUNT(r.id) 
+                         FROM registrations r 
+                         JOIN students s ON s.id = r.student_id 
+                         WHERE r.year_id=? AND s.color=?");
+  $stmt->execute([$yearId, $color]);
+  $registered = (int)$stmt->fetchColumn();
+  $percent = $totalSlots > 0 ? round(($registered / $totalSlots) * 100, 1) : 0;
+  $colorRegistration[$color] = [
+    'registered' => $registered,
+    'total' => $totalSlots,
+    'percent' => $percent
+  ];
+}
 
 $pageTitle = 'แดชบอร์ด';
 include __DIR__ . '/../includes/header.php';
@@ -153,18 +187,56 @@ include __DIR__ . '/../includes/navbar.php';
     </div>
   </div>
 
+  <!-- Registration Progress by Color -->
+  <div class="card shadow-sm mb-4">
+    <div class="card-body">
+      <h6 class="fw-bold mb-3">📋 สถิติการลงทะเบียนแต่ละสี</h6>
+      <div class="row g-3">
+        <?php
+          $colorInfo = [
+            'เขียว' => ['bg' => '#d4edda', 'hex' => '#28a745', 'dark' => '#155724'],
+            'ฟ้า'   => ['bg' => '#d1ecf1', 'hex' => '#17a2b8', 'dark' => '#0c5460'],
+            'ชมพู'  => ['bg' => '#f8d7da', 'hex' => '#e83e8c', 'dark' => '#721c24'],
+            'ส้ม'   => ['bg' => '#fff3cd', 'hex' => '#fd7e14', 'dark' => '#856404'],
+          ];
+          foreach (['เขียว','ฟ้า','ชมพู','ส้ม'] as $c):
+            $data = $colorRegistration[$c];
+        ?>
+        <div class="col-6 col-md-3">
+          <div class="p-3 rounded-3" style="background: <?php echo $colorInfo[$c]['bg']; ?>;">
+            <div class="color-badge mx-auto mb-2" style="background: white; color: #333;">
+              <div class="color-dot" style="background: <?php echo $colorInfo[$c]['hex']; ?>;"></div>
+              <span>สี<?php echo e($c); ?></span>
+            </div>
+            <div class="text-center mb-2">
+              <div class="h5 fw-bold mb-0" style="color: <?php echo $colorInfo[$c]['dark']; ?>;">
+                <?php echo $data['registered']; ?> / <?php echo $data['total']; ?>
+              </div>
+              <small class="text-muted">คนที่ลงทะเบียน</small>
+            </div>
+            <div class="progress" style="height: 8px; background: rgba(255,255,255,0.6);">
+              <div class="progress-bar" role="progressbar" 
+                   style="width: <?php echo $data['percent']; ?>%; background: <?php echo $colorInfo[$c]['hex']; ?>;"
+                   aria-valuenow="<?php echo $data['percent']; ?>" aria-valuemin="0" aria-valuemax="100"></div>
+            </div>
+            <div class="text-center mt-2">
+              <span class="badge" style="background: <?php echo $colorInfo[$c]['hex']; ?>; color: white;">
+                <?php echo $data['percent']; ?>%
+              </span>
+            </div>
+          </div>
+        </div>
+        <?php endforeach; ?>
+      </div>
+    </div>
+  </div>
+
   <!-- Color Distribution -->
   <div class="card shadow-sm mb-4">
     <div class="card-body">
       <h6 class="fw-bold mb-3">🎨 จำนวนนักเรียนแยกตามสี</h6>
       <div class="row g-3">
         <?php
-          $colorInfo = [
-            'เขียว' => ['bg' => '#d4edda', 'hex' => '#28a745'],
-            'ฟ้า'   => ['bg' => '#d1ecf1', 'hex' => '#17a2b8'],
-            'ชมพู'  => ['bg' => '#f8d7da', 'hex' => '#e83e8c'],
-            'ส้ม'   => ['bg' => '#fff3cd', 'hex' => '#fd7e14'],
-          ];
           foreach (['เขียว','ฟ้า','ชมพู','ส้ม'] as $c):
         ?>
         <div class="col-6 col-md-3">

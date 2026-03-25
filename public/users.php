@@ -66,7 +66,20 @@ if ($action === 'create' && $_SERVER['REQUEST_METHOD']==='POST') {
           ($role === 'staff' && $color) ? " | สี: {$color}" : '',
           $active ? 'เปิด' : 'ปิด'));
       
-      $messages[]='เพิ่มผู้ใช้เรียบร้อย';
+      // เก็บข้อความไว้ใน session
+      $_SESSION['success_message'] = 'เพิ่มผู้ใช้เรียบร้อย';
+      
+      // Redirect กลับพร้อม filter จาก session
+      $redirectParams = [];
+      if (!empty($_SESSION['users_filter'])) {
+        $savedFilter = $_SESSION['users_filter'];
+        if (!empty($savedFilter['q'])) $redirectParams['q'] = $savedFilter['q'];
+        if (!empty($savedFilter['role'])) $redirectParams['role'] = $savedFilter['role'];
+        if (!empty($savedFilter['staff_color'])) $redirectParams['staff_color'] = $savedFilter['staff_color'];
+      }
+      $redirectUrl = BASE_URL . '/users.php' . ($redirectParams ? '?' . http_build_query($redirectParams) : '');
+      header('Location: ' . $redirectUrl);
+      exit;
     } catch (Throwable $e) {
       // 🔥 LOG: เพิ่มผู้ใช้ไม่สำเร็จ
       log_activity('ERROR', 'users', null, 
@@ -153,7 +166,9 @@ if ($action === 'update' && $_SERVER['REQUEST_METHOD']==='POST') {
             sprintf("แก้ไขผู้ใช้ ID:%d → %s", $id, $username));
         }
         
-        $messages[]='บันทึกผู้ใช้เรียบร้อย';
+        // เก็บข้อความไว้ใน session
+        $_SESSION['success_message'] = 'บันทึกผู้ใช้เรียบร้อย';
+        
         // ถ้าแก้ตัวเอง อัปเดต session ด้วย
         if ($id === $selfId) {
           $_SESSION['admin']['username'] = $username;
@@ -161,6 +176,18 @@ if ($action === 'update' && $_SERVER['REQUEST_METHOD']==='POST') {
           $_SESSION['admin']['role'] = $role;
           $_SESSION['admin']['staff_color'] = $color;
         }
+        
+        // Redirect กลับพร้อม filter จาก session
+        $redirectParams = [];
+        if (!empty($_SESSION['users_filter'])) {
+          $savedFilter = $_SESSION['users_filter'];
+          if (!empty($savedFilter['q'])) $redirectParams['q'] = $savedFilter['q'];
+          if (!empty($savedFilter['role'])) $redirectParams['role'] = $savedFilter['role'];
+          if (!empty($savedFilter['staff_color'])) $redirectParams['staff_color'] = $savedFilter['staff_color'];
+        }
+        $redirectUrl = BASE_URL . '/users.php' . ($redirectParams ? '?' . http_build_query($redirectParams) : '');
+        header('Location: ' . $redirectUrl);
+        exit;
       }
     } catch (Throwable $e) {
       // 🔥 LOG: แก้ไขผู้ใช้ไม่สำเร็จ
@@ -203,7 +230,20 @@ if ($action === 'delete' && $_SERVER['REQUEST_METHOD']==='POST') {
         log_activity('DELETE', 'users', $id, sprintf("ลบผู้ใช้ ID:%d", $id));
       }
       
-      $messages[]='ลบผู้ใช้เรียบร้อย';
+      // เก็บข้อความไว้ใน session
+      $_SESSION['success_message'] = 'ลบผู้ใช้เรียบร้อย';
+      
+      // Redirect กลับพร้อม filter จาก session
+      $redirectParams = [];
+      if (!empty($_SESSION['users_filter'])) {
+        $savedFilter = $_SESSION['users_filter'];
+        if (!empty($savedFilter['q'])) $redirectParams['q'] = $savedFilter['q'];
+        if (!empty($savedFilter['role'])) $redirectParams['role'] = $savedFilter['role'];
+        if (!empty($savedFilter['staff_color'])) $redirectParams['staff_color'] = $savedFilter['staff_color'];
+      }
+      $redirectUrl = BASE_URL . '/users.php' . ($redirectParams ? '?' . http_build_query($redirectParams) : '');
+      header('Location: ' . $redirectUrl);
+      exit;
     } catch (Throwable $e) {
       // 🔥 LOG: ลบผู้ใช้ไม่สำเร็จ
       log_activity('ERROR', 'users', $id, 
@@ -330,6 +370,15 @@ $q = trim($_GET['q'] ?? '');
 $roleF = trim($_GET['role'] ?? '');
 $colorF= trim($_GET['staff_color'] ?? '');
 
+// ถ้ามี filter ใน URL ให้เก็บลง session
+if ($q !== '' || $roleF !== '' || $colorF !== '') {
+    $_SESSION['users_filter'] = [
+        'q' => $q,
+        'role' => $roleF,
+        'staff_color' => $colorF
+    ];
+}
+
 $where = []; $params=[];
 if ($q!==''){ $where[]="(username LIKE :q OR display_name LIKE :q)"; $params[':q']='%'.$q.'%'; }
 if ($roleF!=='' && in_array($roleF,$roles,true)){ $where[]="role=:r"; $params[':r']=$roleF; }
@@ -343,6 +392,7 @@ $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 /* VIEW */
 include __DIR__ . '/../includes/header.php';
 include __DIR__ . '/../includes/navbar.php';
+echo '<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>';
 ?>
 <main class="container py-4">
   <div class="row g-3">
@@ -352,6 +402,9 @@ include __DIR__ . '/../includes/navbar.php';
           <h5 class="card-title mb-3">เพิ่มผู้ใช้</h5>
           <?php if ($errors): ?><div class="alert alert-danger"><?= implode('<br>', array_map('e',$errors)); ?></div><?php endif; ?>
           <?php if ($messages): ?><div class="alert alert-success"><?= implode('<br>', array_map('e',$messages)); ?></div><?php endif; ?>
+          <?php if (!empty($_SESSION['success_message'])): ?>
+            <div class="alert alert-success"><?= e($_SESSION['success_message']); unset($_SESSION['success_message']); ?></div>
+          <?php endif; ?>
 
           <form method="post" action="<?php echo BASE_URL; ?>/users.php" class="row g-2">
             <input type="hidden" name="action" value="create">
@@ -482,12 +535,12 @@ include __DIR__ . '/../includes/navbar.php';
                                 data-active="<?= (int)$u['is_active']; ?>">
                           แก้ไข
                         </button>
-                        <form method="post" action="<?php echo BASE_URL; ?>/users.php" onsubmit="return confirm('ลบผู้ใช้นี้?');">
-                          <input type="hidden" name="action" value="delete">
-                          <input type="hidden" name="id" value="<?= (int)$u['id']; ?>">
-                          <button class="btn btn-sm btn-outline-danger">ลบ</button>
-                        </form>
+                        <button type="button" class="btn btn-sm btn-outline-danger delete-user-btn" data-id="<?= (int)$u['id']; ?>">ลบ</button>
                       </div>
+                      <form method="post" action="<?php echo BASE_URL; ?>/users.php" class="delete-user-form d-none" data-id="<?= (int)$u['id']; ?>">
+                        <input type="hidden" name="action" value="delete">
+                        <input type="hidden" name="id" value="<?= (int)$u['id']; ?>">
+                      </form>
                     </td>
                   </tr>
                 <?php endforeach; endif; ?>
@@ -578,4 +631,28 @@ if (editModal) {
     if (col.disabled) col.value='';
   });
 }
+
+// SweetAlert2 สำหรับปุ่มลบผู้ใช้
+document.addEventListener('click', function(e) {
+  if (e.target && e.target.classList.contains('delete-user-btn')) {
+    e.preventDefault();
+    const userId = e.target.getAttribute('data-id');
+    const form = document.querySelector('.delete-user-form[data-id="' + userId + '"]');
+    
+    Swal.fire({
+      title: 'ยืนยันการลบ',
+      text: 'ต้องการลบผู้ใช้นี้ใช่หรือไม่?',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      cancelButtonColor: '#6c757d',
+      confirmButtonText: 'ใช่, ลบเลย',
+      cancelButtonText: 'ยกเลิก'
+    }).then((result) => {
+      if (result.isConfirmed) {
+        form.submit();
+      }
+    });
+  }
+});
 </script>

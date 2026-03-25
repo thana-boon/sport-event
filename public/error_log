@@ -1,0 +1,297 @@
+[08-Jan-2026 09:15:53 UTC] PHP Fatal error:  Uncaught PDOException: SQLSTATE[22007]: Invalid datetime format: 1366 Incorrect string value: '\xE0\xB9_\xE0\xB8\xA2...' for column `zoeypszw_school_app`.`sport_covers`.`cover_pdf` at row 1 in /home/zoeypszw/public_html/sukhon.ac.th/sport-event/public/upload_cover.php:95
+Stack trace:
+#0 /home/zoeypszw/public_html/sukhon.ac.th/sport-event/public/upload_cover.php(95): PDOStatement->execute()
+#1 {main}
+  thrown in /home/zoeypszw/public_html/sukhon.ac.th/sport-event/public/upload_cover.php on line 95
+[08-Jan-2026 09:16:07 UTC] PHP Fatal error:  Uncaught PDOException: SQLSTATE[22007]: Invalid datetime format: 1366 Incorrect string value: '\xE0\xB9_\xE0\xB8\xA2...' for column `zoeypszw_school_app`.`sport_covers`.`cover_pdf` at row 1 in /home/zoeypszw/public_html/sukhon.ac.th/sport-event/public/upload_cover.php:95
+Stack trace:
+#0 /home/zoeypszw/public_html/sukhon.ac.th/sport-event/public/upload_cover.php(95): PDOStatement->execute()
+#1 {main}
+  thrown in /home/zoeypszw/public_html/sukhon.ac.th/sport-event/public/upload_cover.php on line 95
+[08-Jan-2026 09:16:27 UTC] PHP Fatal error:  Uncaught PDOException: SQLSTATE[22007]: Invalid datetime format: 1366 Incorrect string value: '\xE0\xB9_\xE0\xB8\xA2...' for column `zoeypszw_school_app`.`sport_covers`.`cover_pdf` at row 1 in /home/zoeypszw/public_html/sukhon.ac.th/sport-event/public/upload_cover.php:95
+Stack trace:
+#0 /home/zoeypszw/public_html/sukhon.ac.th/sport-event/public/upload_cover.php(95): PDOStatement->execute()
+#1 {main}
+  thrown in /home/zoeypszw/public_html/sukhon.ac.th/sport-event/public/upload_cover.php on line 95
+[08-Jan-2026 09:16:37 UTC] PHP Fatal error:  Uncaught PDOException: SQLSTATE[22007]: Invalid datetime format: 1366 Incorrect string value: '\xE0\xB9_\xE0\xB8\xA2...' for column `zoeypszw_school_app`.`sport_covers`.`cover_pdf` at row 1 in /home/zoeypszw/public_html/sukhon.ac.th/sport-event/public/upload_cover.php:95
+Stack trace:
+#0 /home/zoeypszw/public_html/sukhon.ac.th/sport-event/public/upload_cover.php(95): PDOStatement->execute()
+#1 {main}
+  thrown in /home/zoeypszw/public_html/sukhon.ac.th/sport-event/public/upload_cover.php on line 95
+[08-Jan-2026 09:20:07 UTC] PHP Fatal error:  Uncaught PDOException: SQLSTATE[22007]: Invalid datetime format: 1366 Incorrect string value: '\xE0\xB9_\xE0\xB8\xA2...' for column `zoeypszw_school_app`.`sport_covers`.`cover_pdf` at row 1 in /home/zoeypszw/public_html/sukhon.ac.th/sport-event/public/upload_cover.php:95
+Stack trace:
+#0 /home/zoeypszw/public_html/sukhon.ac.th/sport-event/public/upload_cover.php(95): PDOStatement->execute()
+#1 {main}
+  thrown in /home/zoeypszw/public_html/sukhon.ac.th/sport-event/public/upload_cover.php on line 95
+[12-Jan-2026 06:17:31 UTC] === LOAD STUDENTS DEBUG ===
+[12-Jan-2026 06:17:31 UTC] Sport ID: 163
+[12-Jan-2026 06:17:31 UTC] Color: ส้ม
+[12-Jan-2026 06:17:31 UTC] Current Student ID: 1725
+[12-Jan-2026 06:17:31 UTC] Sport: {"id":"163","year_id":"1","category_id":"4","name":"\u0e41\u0e1a\u0e14\u0e21\u0e34\u0e19\u0e15\u0e31\u0e19 (\u0e0a\u0e32\u0e22-\u0e2b\u0e0d\u0e34\u0e07\u0e04\u0e39\u0e48) \u0e21\u0e31\u0e18\u0e22\u0e21\u0e28\u0e36\u0e01\u0e29\u0e32\u0e15\u0e2d\u0e19\u0e1b\u0e25\u0e32\u0e22","gender":"\u0e23\u0e27\u0e21","participant_type":"\u0e17\u0e35\u0e21","team_size":"2","min_participants":"2","grade_levels":"\u0e214,\u0e215,\u0e216","is_active":"1","created_at":"2025-11-03 17:12:07"}
+[12-Jan-2026 06:17:31 UTC] Adjusted grade levels: ["\u0e214","\u0e21.4","\u0e215","\u0e21.5","\u0e216","\u0e21.6"]
+[12-Jan-2026 06:17:31 UTC] SQL: 
+        SELECT 
+          id, student_code, first_name, last_name, 
+          class_level, class_room, color
+        FROM students 
+        WHERE year_id = ? AND color = ?
+       AND class_level IN (?,?,?,?,?,?) ORDER BY class_level, class_room, CAST(number_in_room AS UNSIGNED)
+[12-Jan-2026 06:17:31 UTC] Params: [1,"\u0e2a\u0e49\u0e21","\u0e214","\u0e21.4","\u0e215","\u0e21.5","\u0e216","\u0e21.6"]
+[12-Jan-2026 06:17:31 UTC] Students found: 99
+[12-Jan-2026 06:17:31 UTC] First student: {"id":"1460","student_code":"3157","first_name":"\u0e19\u0e32\u0e22\u0e13\u0e31\u0e10\u0e27\u0e38\u0e12\u0e34","last_name":"\u0e21\u0e23\u0e23\u0e04\u0e2a\u0e38\u0e17\u0e18\u0e34\u0e01\u0e38\u0e25","class_level":"\u0e21.4","class_room":"4","color":"\u0e2a\u0e49\u0e21"}
+[12-Jan-2026 06:17:31 UTC] Final count: 99
+[12-Jan-2026 09:23:43 UTC] === LOAD STUDENTS DEBUG ===
+[12-Jan-2026 09:23:43 UTC] Sport ID: 219
+[12-Jan-2026 09:23:43 UTC] Color: ฟ้า
+[12-Jan-2026 09:23:43 UTC] Current Student ID: 643
+[12-Jan-2026 09:23:44 UTC] Sport: {"id":"219","year_id":"1","category_id":"2","name":"\u0e27\u0e34\u0e48\u0e07\u0e1c\u0e25\u0e31\u0e14 8 x 50 \u0e40\u0e21\u0e15\u0e23 \u0e2b\u0e0d\u0e34\u0e07 \u0e1b.5-6","gender":"\u0e0d","participant_type":"\u0e17\u0e35\u0e21","team_size":"8","min_participants":"8","grade_levels":"\u0e1b5,\u0e1b6","is_active":"1","created_at":"2025-11-03 17:12:07"}
+[12-Jan-2026 09:23:44 UTC] Adjusted grade levels: ["\u0e1b5","\u0e1b.5","\u0e1b6","\u0e1b.6"]
+[12-Jan-2026 09:23:44 UTC] SQL: 
+        SELECT 
+          id, student_code, first_name, last_name, 
+          class_level, class_room, color
+        FROM students 
+        WHERE year_id = ? AND color = ?
+       AND class_level IN (?,?,?,?) ORDER BY class_level, class_room, CAST(number_in_room AS UNSIGNED)
+[12-Jan-2026 09:23:44 UTC] Params: [1,"\u0e1f\u0e49\u0e32","\u0e1b5","\u0e1b.5","\u0e1b6","\u0e1b.6"]
+[12-Jan-2026 09:23:44 UTC] Students found: 74
+[12-Jan-2026 09:23:44 UTC] First student: {"id":"512","student_code":"5115","first_name":"\u0e40\u0e14\u0e47\u0e01\u0e0a\u0e32\u0e22\u0e28\u0e38\u0e20\u0e01\u0e24\u0e15","last_name":"\u0e41\u0e2a\u0e07\u0e1e\u0e34\u0e17\u0e31\u0e01\u0e29\u0e4c","class_level":"\u0e1b.5","class_room":"1","color":"\u0e1f\u0e49\u0e32"}
+[12-Jan-2026 09:23:44 UTC] Final count: 74
+[12-Jan-2026 09:25:26 UTC] === LOAD STUDENTS DEBUG ===
+[12-Jan-2026 09:25:26 UTC] Sport ID: 150
+[12-Jan-2026 09:25:26 UTC] Color: ฟ้า
+[12-Jan-2026 09:25:26 UTC] Current Student ID: 643
+[12-Jan-2026 09:25:26 UTC] Sport: {"id":"150","year_id":"1","category_id":"4","name":"\u0e27\u0e48\u0e32\u0e22\u0e19\u0e49\u0e33 \u0e1c\u0e25\u0e31\u0e14\u0e40\u0e01\u0e32\u0e30\u0e42\u0e1f\u0e21 25 \u0e40\u0e21\u0e15\u0e23 \u0e2b\u0e0d\u0e34\u0e07 \u0e1b.5","gender":"\u0e0d","participant_type":"\u0e17\u0e35\u0e21","team_size":"2","min_participants":"2","grade_levels":"\u0e1b5","is_active":"1","created_at":"2025-11-03 17:12:07"}
+[12-Jan-2026 09:25:26 UTC] Adjusted grade levels: ["\u0e1b5","\u0e1b.5"]
+[12-Jan-2026 09:25:26 UTC] SQL: 
+        SELECT 
+          id, student_code, first_name, last_name, 
+          class_level, class_room, color
+        FROM students 
+        WHERE year_id = ? AND color = ?
+       AND class_level IN (?,?) ORDER BY class_level, class_room, CAST(number_in_room AS UNSIGNED)
+[12-Jan-2026 09:25:26 UTC] Params: [1,"\u0e1f\u0e49\u0e32","\u0e1b5","\u0e1b.5"]
+[12-Jan-2026 09:25:26 UTC] Students found: 38
+[12-Jan-2026 09:25:26 UTC] First student: {"id":"512","student_code":"5115","first_name":"\u0e40\u0e14\u0e47\u0e01\u0e0a\u0e32\u0e22\u0e28\u0e38\u0e20\u0e01\u0e24\u0e15","last_name":"\u0e41\u0e2a\u0e07\u0e1e\u0e34\u0e17\u0e31\u0e01\u0e29\u0e4c","class_level":"\u0e1b.5","class_room":"1","color":"\u0e1f\u0e49\u0e32"}
+[12-Jan-2026 09:25:26 UTC] Final count: 38
+[13-Jan-2026 08:12:13 UTC] === LOAD STUDENTS DEBUG ===
+[13-Jan-2026 08:12:13 UTC] Sport ID: 118
+[13-Jan-2026 08:12:13 UTC] Color: ชมพู
+[13-Jan-2026 08:12:13 UTC] Current Student ID: 428
+[13-Jan-2026 08:12:13 UTC] Sport: {"id":"118","year_id":"1","category_id":"4","name":"E-Sport ROV \u0e1b\u0e23\u0e30\u0e16\u0e21\u0e28\u0e36\u0e01\u0e29\u0e32\u0e1b\u0e35\u0e17\u0e35\u0e48 3-4","gender":"\u0e23\u0e27\u0e21","participant_type":"\u0e17\u0e35\u0e21","team_size":"5","min_participants":"5","grade_levels":"\u0e1b3,\u0e1b4","is_active":"1","created_at":"2025-11-03 17:12:07"}
+[13-Jan-2026 08:12:13 UTC] Adjusted grade levels: ["\u0e1b3","\u0e1b.3","\u0e1b4","\u0e1b.4"]
+[13-Jan-2026 08:12:13 UTC] SQL: 
+        SELECT 
+          id, student_code, first_name, last_name, 
+          class_level, class_room, color
+        FROM students 
+        WHERE year_id = ? AND color = ?
+       AND class_level IN (?,?,?,?) ORDER BY class_level, class_room, CAST(number_in_room AS UNSIGNED)
+[13-Jan-2026 08:12:13 UTC] Params: [1,"\u0e0a\u0e21\u0e1e\u0e39","\u0e1b3","\u0e1b.3","\u0e1b4","\u0e1b.4"]
+[13-Jan-2026 08:12:13 UTC] Students found: 60
+[13-Jan-2026 08:12:13 UTC] First student: {"id":"325","student_code":"5911","first_name":"\u0e40\u0e14\u0e47\u0e01\u0e0a\u0e32\u0e22\u0e2a\u0e38\u0e27\u0e34\u0e01\u0e23\u0e21","last_name":"\u0e15\u0e31\u0e49\u0e07\u0e27\u0e31\u0e0a\u0e42\u0e23\u0e1a\u0e25","class_level":"\u0e1b.3","class_room":"3","color":"\u0e0a\u0e21\u0e1e\u0e39"}
+[13-Jan-2026 08:12:13 UTC] Final count: 60
+[15-Jan-2026 07:04:05 UTC] === LOAD STUDENTS DEBUG ===
+[15-Jan-2026 07:04:05 UTC] Sport ID: 113
+[15-Jan-2026 07:04:05 UTC] Color: ฟ้า
+[15-Jan-2026 07:04:05 UTC] Current Student ID: 508
+[15-Jan-2026 07:04:05 UTC] Sport: {"id":"113","year_id":"1","category_id":"4","name":"E-Sport ROV \u0e1b\u0e23\u0e30\u0e16\u0e21\u0e28\u0e36\u0e01\u0e29\u0e32\u0e1b\u0e35\u0e17\u0e35\u0e48 3-4 (\u0e40\u0e14\u0e35\u0e48\u0e22\u0e27)","gender":"\u0e23\u0e27\u0e21","participant_type":"\u0e40\u0e14\u0e35\u0e48\u0e22\u0e27","team_size":"1","min_participants":"1","grade_levels":"\u0e1b3,\u0e1b4","is_active":"1","created_at":"2025-11-03 17:12:07"}
+[15-Jan-2026 07:04:05 UTC] Adjusted grade levels: ["\u0e1b3","\u0e1b.3","\u0e1b4","\u0e1b.4"]
+[15-Jan-2026 07:04:05 UTC] SQL: 
+        SELECT 
+          id, student_code, first_name, last_name, 
+          class_level, class_room, color
+        FROM students 
+        WHERE year_id = ? AND color = ?
+       AND class_level IN (?,?,?,?) ORDER BY class_level, class_room, CAST(number_in_room AS UNSIGNED)
+[15-Jan-2026 07:04:05 UTC] Params: [1,"\u0e1f\u0e49\u0e32","\u0e1b3","\u0e1b.3","\u0e1b4","\u0e1b.4"]
+[15-Jan-2026 07:04:05 UTC] Students found: 63
+[15-Jan-2026 07:04:05 UTC] First student: {"id":"354","student_code":"5928","first_name":"\u0e40\u0e14\u0e47\u0e01\u0e0a\u0e32\u0e22\u0e2a\u0e38\u0e27\u0e1e\u0e34\u0e0a\u0e0d\u0e4c","last_name":"\u0e17\u0e19\u0e17\u0e32\u0e19","class_level":"\u0e1b.3","class_room":"4","color":"\u0e1f\u0e49\u0e32"}
+[15-Jan-2026 07:04:05 UTC] Final count: 63
+[15-Jan-2026 07:08:03 UTC] === LOAD STUDENTS DEBUG ===
+[15-Jan-2026 07:08:03 UTC] Sport ID: 147
+[15-Jan-2026 07:08:03 UTC] Color: ฟ้า
+[15-Jan-2026 07:08:03 UTC] Current Student ID: 478
+[15-Jan-2026 07:08:03 UTC] Sport: {"id":"147","year_id":"1","category_id":"4","name":"\u0e27\u0e48\u0e32\u0e22\u0e19\u0e49\u0e33 \u0e1c\u0e25\u0e31\u0e14\u0e40\u0e01\u0e32\u0e30\u0e42\u0e1f\u0e21 25 \u0e40\u0e21\u0e15\u0e23 \u0e0a\u0e32\u0e22 \u0e1b.4","gender":"\u0e0a","participant_type":"\u0e17\u0e35\u0e21","team_size":"2","min_participants":"2","grade_levels":"\u0e1b4","is_active":"1","created_at":"2025-11-03 17:12:07"}
+[15-Jan-2026 07:08:03 UTC] Adjusted grade levels: ["\u0e1b4","\u0e1b.4"]
+[15-Jan-2026 07:08:03 UTC] SQL: 
+        SELECT 
+          id, student_code, first_name, last_name, 
+          class_level, class_room, color
+        FROM students 
+        WHERE year_id = ? AND color = ?
+       AND class_level IN (?,?) ORDER BY class_level, class_room, CAST(number_in_room AS UNSIGNED)
+[15-Jan-2026 07:08:03 UTC] Params: [1,"\u0e1f\u0e49\u0e32","\u0e1b4","\u0e1b.4"]
+[15-Jan-2026 07:08:03 UTC] Students found: 33
+[15-Jan-2026 07:08:03 UTC] First student: {"id":"386","student_code":"5857","first_name":"\u0e40\u0e14\u0e47\u0e01\u0e0a\u0e32\u0e22\u0e01\u0e24\u0e15\u0e34\u0e40\u0e14\u0e0a","last_name":"\u0e18\u0e19\u0e31\u0e0d\u0e0a\u0e22\u0e30","class_level":"\u0e1b.4","class_room":"1","color":"\u0e1f\u0e49\u0e32"}
+[15-Jan-2026 07:08:03 UTC] Final count: 33
+[15-Jan-2026 07:08:28 UTC] === LOAD STUDENTS DEBUG ===
+[15-Jan-2026 07:08:28 UTC] Sport ID: 113
+[15-Jan-2026 07:08:28 UTC] Color: ฟ้า
+[15-Jan-2026 07:08:28 UTC] Current Student ID: 508
+[15-Jan-2026 07:08:28 UTC] Sport: {"id":"113","year_id":"1","category_id":"4","name":"E-Sport ROV \u0e1b\u0e23\u0e30\u0e16\u0e21\u0e28\u0e36\u0e01\u0e29\u0e32\u0e1b\u0e35\u0e17\u0e35\u0e48 3-4 (\u0e40\u0e14\u0e35\u0e48\u0e22\u0e27)","gender":"\u0e23\u0e27\u0e21","participant_type":"\u0e40\u0e14\u0e35\u0e48\u0e22\u0e27","team_size":"1","min_participants":"1","grade_levels":"\u0e1b3,\u0e1b4","is_active":"1","created_at":"2025-11-03 17:12:07"}
+[15-Jan-2026 07:08:28 UTC] Adjusted grade levels: ["\u0e1b3","\u0e1b.3","\u0e1b4","\u0e1b.4"]
+[15-Jan-2026 07:08:28 UTC] SQL: 
+        SELECT 
+          id, student_code, first_name, last_name, 
+          class_level, class_room, color
+        FROM students 
+        WHERE year_id = ? AND color = ?
+       AND class_level IN (?,?,?,?) ORDER BY class_level, class_room, CAST(number_in_room AS UNSIGNED)
+[15-Jan-2026 07:08:28 UTC] Params: [1,"\u0e1f\u0e49\u0e32","\u0e1b3","\u0e1b.3","\u0e1b4","\u0e1b.4"]
+[15-Jan-2026 07:08:28 UTC] Students found: 63
+[15-Jan-2026 07:08:28 UTC] First student: {"id":"354","student_code":"5928","first_name":"\u0e40\u0e14\u0e47\u0e01\u0e0a\u0e32\u0e22\u0e2a\u0e38\u0e27\u0e1e\u0e34\u0e0a\u0e0d\u0e4c","last_name":"\u0e17\u0e19\u0e17\u0e32\u0e19","class_level":"\u0e1b.3","class_room":"4","color":"\u0e1f\u0e49\u0e32"}
+[15-Jan-2026 07:08:28 UTC] Final count: 63
+[20-Jan-2026 07:19:30 UTC] === LOAD STUDENTS DEBUG ===
+[20-Jan-2026 07:19:30 UTC] Sport ID: 143
+[20-Jan-2026 07:19:30 UTC] Color: ส้ม
+[20-Jan-2026 07:19:30 UTC] Current Student ID: 176
+[20-Jan-2026 07:19:30 UTC] Sport: {"id":"143","year_id":"1","category_id":"4","name":"\u0e27\u0e48\u0e32\u0e22\u0e19\u0e49\u0e33 \u0e1c\u0e25\u0e31\u0e14\u0e40\u0e01\u0e32\u0e30\u0e42\u0e1f\u0e21 18 \u0e40\u0e21\u0e15\u0e23 \u0e0a\u0e32\u0e22 \u0e1b.2","gender":"\u0e0a","participant_type":"\u0e17\u0e35\u0e21","team_size":"2","min_participants":"2","grade_levels":"\u0e1b2","is_active":"1","created_at":"2025-11-03 17:12:07"}
+[20-Jan-2026 07:19:30 UTC] Adjusted grade levels: ["\u0e1b2","\u0e1b.2"]
+[20-Jan-2026 07:19:30 UTC] SQL: 
+        SELECT 
+          id, student_code, first_name, last_name, 
+          class_level, class_room, color
+        FROM students 
+        WHERE year_id = ? AND color = ?
+       AND class_level IN (?,?) ORDER BY class_level, class_room, CAST(number_in_room AS UNSIGNED)
+[20-Jan-2026 07:19:30 UTC] Params: [1,"\u0e2a\u0e49\u0e21","\u0e1b2","\u0e1b.2"]
+[20-Jan-2026 07:19:30 UTC] Students found: 33
+[20-Jan-2026 07:19:30 UTC] First student: {"id":"170","student_code":"6256","first_name":"\u0e40\u0e14\u0e47\u0e01\u0e0a\u0e32\u0e22\u0e1b\u0e31\u0e13\u0e13\u0e27\u0e34\u0e0a\u0e0d\u0e4c","last_name":"\u0e0a\u0e48\u0e27\u0e22\u0e2a\u0e23\u0e49\u0e32\u0e07","class_level":"\u0e1b.2","class_room":"2","color":"\u0e2a\u0e49\u0e21"}
+[20-Jan-2026 07:19:30 UTC] Final count: 33
+[20-Jan-2026 07:20:31 UTC] === LOAD STUDENTS DEBUG ===
+[20-Jan-2026 07:20:31 UTC] Sport ID: 144
+[20-Jan-2026 07:20:31 UTC] Color: ส้ม
+[20-Jan-2026 07:20:31 UTC] Current Student ID: 200
+[20-Jan-2026 07:20:31 UTC] Sport: {"id":"144","year_id":"1","category_id":"4","name":"\u0e27\u0e48\u0e32\u0e22\u0e19\u0e49\u0e33 \u0e1c\u0e25\u0e31\u0e14\u0e40\u0e01\u0e32\u0e30\u0e42\u0e1f\u0e21 18 \u0e40\u0e21\u0e15\u0e23 \u0e2b\u0e0d\u0e34\u0e07 \u0e1b.2","gender":"\u0e0d","participant_type":"\u0e17\u0e35\u0e21","team_size":"2","min_participants":"2","grade_levels":"\u0e1b2","is_active":"1","created_at":"2025-11-03 17:12:07"}
+[20-Jan-2026 07:20:31 UTC] Adjusted grade levels: ["\u0e1b2","\u0e1b.2"]
+[20-Jan-2026 07:20:31 UTC] SQL: 
+        SELECT 
+          id, student_code, first_name, last_name, 
+          class_level, class_room, color
+        FROM students 
+        WHERE year_id = ? AND color = ?
+       AND class_level IN (?,?) ORDER BY class_level, class_room, CAST(number_in_room AS UNSIGNED)
+[20-Jan-2026 07:20:31 UTC] Params: [1,"\u0e2a\u0e49\u0e21","\u0e1b2","\u0e1b.2"]
+[20-Jan-2026 07:20:31 UTC] Students found: 33
+[20-Jan-2026 07:20:31 UTC] First student: {"id":"170","student_code":"6256","first_name":"\u0e40\u0e14\u0e47\u0e01\u0e0a\u0e32\u0e22\u0e1b\u0e31\u0e13\u0e13\u0e27\u0e34\u0e0a\u0e0d\u0e4c","last_name":"\u0e0a\u0e48\u0e27\u0e22\u0e2a\u0e23\u0e49\u0e32\u0e07","class_level":"\u0e1b.2","class_room":"2","color":"\u0e2a\u0e49\u0e21"}
+[20-Jan-2026 07:20:31 UTC] Final count: 33
+[20-Jan-2026 07:23:08 UTC] === LOAD STUDENTS DEBUG ===
+[20-Jan-2026 07:23:08 UTC] Sport ID: 120
+[20-Jan-2026 07:23:08 UTC] Color: ส้ม
+[20-Jan-2026 07:23:08 UTC] Current Student ID: 813
+[20-Jan-2026 07:23:08 UTC] Sport: {"id":"120","year_id":"1","category_id":"4","name":"E-Sport ROV \u0e21\u0e31\u0e18\u0e22\u0e21\u0e28\u0e36\u0e01\u0e29\u0e32\u0e1b\u0e35\u0e17\u0e35\u0e48 1-2","gender":"\u0e23\u0e27\u0e21","participant_type":"\u0e17\u0e35\u0e21","team_size":"5","min_participants":"5","grade_levels":"\u0e211,\u0e212","is_active":"1","created_at":"2025-11-03 17:12:07"}
+[20-Jan-2026 07:23:08 UTC] Adjusted grade levels: ["\u0e211","\u0e21.1","\u0e212","\u0e21.2"]
+[20-Jan-2026 07:23:08 UTC] SQL: 
+        SELECT 
+          id, student_code, first_name, last_name, 
+          class_level, class_room, color
+        FROM students 
+        WHERE year_id = ? AND color = ?
+       AND class_level IN (?,?,?,?) ORDER BY class_level, class_room, CAST(number_in_room AS UNSIGNED)
+[20-Jan-2026 07:23:08 UTC] Params: [1,"\u0e2a\u0e49\u0e21","\u0e211","\u0e21.1","\u0e212","\u0e21.2"]
+[20-Jan-2026 07:23:08 UTC] Students found: 95
+[20-Jan-2026 07:23:08 UTC] First student: {"id":"811","student_code":"4614","first_name":"\u0e40\u0e14\u0e47\u0e01\u0e0a\u0e32\u0e22\u0e15\u0e34\u0e13\u0e13\u0e20\u0e1e","last_name":"\u0e27\u0e31\u0e19\u0e2a\u0e39\u0e07","class_level":"\u0e21.1","class_room":"1","color":"\u0e2a\u0e49\u0e21"}
+[20-Jan-2026 07:23:08 UTC] Final count: 95
+[20-Jan-2026 07:24:53 UTC] === LOAD STUDENTS DEBUG ===
+[20-Jan-2026 07:24:53 UTC] Sport ID: 120
+[20-Jan-2026 07:24:53 UTC] Color: เขียว
+[20-Jan-2026 07:24:53 UTC] Current Student ID: 931
+[20-Jan-2026 07:24:53 UTC] Sport: {"id":"120","year_id":"1","category_id":"4","name":"E-Sport ROV \u0e21\u0e31\u0e18\u0e22\u0e21\u0e28\u0e36\u0e01\u0e29\u0e32\u0e1b\u0e35\u0e17\u0e35\u0e48 1-2","gender":"\u0e23\u0e27\u0e21","participant_type":"\u0e17\u0e35\u0e21","team_size":"5","min_participants":"5","grade_levels":"\u0e211,\u0e212","is_active":"1","created_at":"2025-11-03 17:12:07"}
+[20-Jan-2026 07:24:53 UTC] Adjusted grade levels: ["\u0e211","\u0e21.1","\u0e212","\u0e21.2"]
+[20-Jan-2026 07:24:53 UTC] SQL: 
+        SELECT 
+          id, student_code, first_name, last_name, 
+          class_level, class_room, color
+        FROM students 
+        WHERE year_id = ? AND color = ?
+       AND class_level IN (?,?,?,?) ORDER BY class_level, class_room, CAST(number_in_room AS UNSIGNED)
+[20-Jan-2026 07:24:53 UTC] Params: [1,"\u0e40\u0e02\u0e35\u0e22\u0e27","\u0e211","\u0e21.1","\u0e212","\u0e21.2"]
+[20-Jan-2026 07:24:53 UTC] Students found: 93
+[20-Jan-2026 07:24:53 UTC] First student: {"id":"804","student_code":"4140","first_name":"\u0e40\u0e14\u0e47\u0e01\u0e0a\u0e32\u0e22\u0e18\u0e35\u0e23\u0e40\u0e14\u0e0a","last_name":"\u0e27\u0e34\u0e40\u0e28\u0e29\u0e2a\u0e21","class_level":"\u0e21.1","class_room":"1","color":"\u0e40\u0e02\u0e35\u0e22\u0e27"}
+[20-Jan-2026 07:24:53 UTC] Final count: 93
+[20-Jan-2026 07:25:29 UTC] === LOAD STUDENTS DEBUG ===
+[20-Jan-2026 07:25:29 UTC] Sport ID: 120
+[20-Jan-2026 07:25:29 UTC] Color: เขียว
+[20-Jan-2026 07:25:29 UTC] Current Student ID: 943
+[20-Jan-2026 07:25:29 UTC] Sport: {"id":"120","year_id":"1","category_id":"4","name":"E-Sport ROV \u0e21\u0e31\u0e18\u0e22\u0e21\u0e28\u0e36\u0e01\u0e29\u0e32\u0e1b\u0e35\u0e17\u0e35\u0e48 1-2","gender":"\u0e23\u0e27\u0e21","participant_type":"\u0e17\u0e35\u0e21","team_size":"5","min_participants":"5","grade_levels":"\u0e211,\u0e212","is_active":"1","created_at":"2025-11-03 17:12:07"}
+[20-Jan-2026 07:25:29 UTC] Adjusted grade levels: ["\u0e211","\u0e21.1","\u0e212","\u0e21.2"]
+[20-Jan-2026 07:25:29 UTC] SQL: 
+        SELECT 
+          id, student_code, first_name, last_name, 
+          class_level, class_room, color
+        FROM students 
+        WHERE year_id = ? AND color = ?
+       AND class_level IN (?,?,?,?) ORDER BY class_level, class_room, CAST(number_in_room AS UNSIGNED)
+[20-Jan-2026 07:25:29 UTC] Params: [1,"\u0e40\u0e02\u0e35\u0e22\u0e27","\u0e211","\u0e21.1","\u0e212","\u0e21.2"]
+[20-Jan-2026 07:25:30 UTC] Students found: 93
+[20-Jan-2026 07:25:30 UTC] First student: {"id":"804","student_code":"4140","first_name":"\u0e40\u0e14\u0e47\u0e01\u0e0a\u0e32\u0e22\u0e18\u0e35\u0e23\u0e40\u0e14\u0e0a","last_name":"\u0e27\u0e34\u0e40\u0e28\u0e29\u0e2a\u0e21","class_level":"\u0e21.1","class_room":"1","color":"\u0e40\u0e02\u0e35\u0e22\u0e27"}
+[20-Jan-2026 07:25:30 UTC] Final count: 93
+[20-Jan-2026 08:00:59 UTC] === LOAD STUDENTS DEBUG ===
+[20-Jan-2026 08:00:59 UTC] Sport ID: 120
+[20-Jan-2026 08:00:59 UTC] Color: ส้ม
+[20-Jan-2026 08:00:59 UTC] Current Student ID: 945
+[20-Jan-2026 08:00:59 UTC] Sport: {"id":"120","year_id":"1","category_id":"4","name":"E-Sport ROV \u0e21\u0e31\u0e18\u0e22\u0e21\u0e28\u0e36\u0e01\u0e29\u0e32\u0e1b\u0e35\u0e17\u0e35\u0e48 1-2","gender":"\u0e23\u0e27\u0e21","participant_type":"\u0e17\u0e35\u0e21","team_size":"5","min_participants":"5","grade_levels":"\u0e211,\u0e212","is_active":"1","created_at":"2025-11-03 17:12:07"}
+[20-Jan-2026 08:00:59 UTC] Adjusted grade levels: ["\u0e211","\u0e21.1","\u0e212","\u0e21.2"]
+[20-Jan-2026 08:00:59 UTC] SQL: 
+        SELECT 
+          id, student_code, first_name, last_name, 
+          class_level, class_room, color
+        FROM students 
+        WHERE year_id = ? AND color = ?
+       AND class_level IN (?,?,?,?) ORDER BY class_level, class_room, CAST(number_in_room AS UNSIGNED)
+[20-Jan-2026 08:00:59 UTC] Params: [1,"\u0e2a\u0e49\u0e21","\u0e211","\u0e21.1","\u0e212","\u0e21.2"]
+[20-Jan-2026 08:00:59 UTC] Students found: 95
+[20-Jan-2026 08:00:59 UTC] First student: {"id":"811","student_code":"4614","first_name":"\u0e40\u0e14\u0e47\u0e01\u0e0a\u0e32\u0e22\u0e15\u0e34\u0e13\u0e13\u0e20\u0e1e","last_name":"\u0e27\u0e31\u0e19\u0e2a\u0e39\u0e07","class_level":"\u0e21.1","class_room":"1","color":"\u0e2a\u0e49\u0e21"}
+[20-Jan-2026 08:00:59 UTC] Final count: 95
+[20-Jan-2026 08:10:32 UTC] === LOAD STUDENTS DEBUG ===
+[20-Jan-2026 08:10:32 UTC] Sport ID: 120
+[20-Jan-2026 08:10:32 UTC] Color: เขียว
+[20-Jan-2026 08:10:32 UTC] Current Student ID: 976
+[20-Jan-2026 08:10:32 UTC] Sport: {"id":"120","year_id":"1","category_id":"4","name":"E-Sport ROV \u0e21\u0e31\u0e18\u0e22\u0e21\u0e28\u0e36\u0e01\u0e29\u0e32\u0e1b\u0e35\u0e17\u0e35\u0e48 1-2","gender":"\u0e23\u0e27\u0e21","participant_type":"\u0e17\u0e35\u0e21","team_size":"5","min_participants":"5","grade_levels":"\u0e211,\u0e212","is_active":"1","created_at":"2025-11-03 17:12:07"}
+[20-Jan-2026 08:10:32 UTC] Adjusted grade levels: ["\u0e211","\u0e21.1","\u0e212","\u0e21.2"]
+[20-Jan-2026 08:10:32 UTC] SQL: 
+        SELECT 
+          id, student_code, first_name, last_name, 
+          class_level, class_room, color
+        FROM students 
+        WHERE year_id = ? AND color = ?
+       AND class_level IN (?,?,?,?) ORDER BY class_level, class_room, CAST(number_in_room AS UNSIGNED)
+[20-Jan-2026 08:10:32 UTC] Params: [1,"\u0e40\u0e02\u0e35\u0e22\u0e27","\u0e211","\u0e21.1","\u0e212","\u0e21.2"]
+[20-Jan-2026 08:10:32 UTC] Students found: 93
+[20-Jan-2026 08:10:32 UTC] First student: {"id":"804","student_code":"4140","first_name":"\u0e40\u0e14\u0e47\u0e01\u0e0a\u0e32\u0e22\u0e18\u0e35\u0e23\u0e40\u0e14\u0e0a","last_name":"\u0e27\u0e34\u0e40\u0e28\u0e29\u0e2a\u0e21","class_level":"\u0e21.1","class_room":"1","color":"\u0e40\u0e02\u0e35\u0e22\u0e27"}
+[20-Jan-2026 08:10:32 UTC] Final count: 93
+[21-Jan-2026 07:17:14 UTC] === LOAD STUDENTS DEBUG ===
+[21-Jan-2026 07:17:14 UTC] Sport ID: 120
+[21-Jan-2026 07:17:14 UTC] Color: ชมพู
+[21-Jan-2026 07:17:14 UTC] Current Student ID: 1042
+[21-Jan-2026 07:17:14 UTC] Sport: {"id":"120","year_id":"1","category_id":"4","name":"E-Sport ROV \u0e21\u0e31\u0e18\u0e22\u0e21\u0e28\u0e36\u0e01\u0e29\u0e32\u0e1b\u0e35\u0e17\u0e35\u0e48 1-2","gender":"\u0e23\u0e27\u0e21","participant_type":"\u0e17\u0e35\u0e21","team_size":"5","min_participants":"5","grade_levels":"\u0e211,\u0e212","is_active":"1","created_at":"2025-11-03 17:12:07"}
+[21-Jan-2026 07:17:14 UTC] Adjusted grade levels: ["\u0e211","\u0e21.1","\u0e212","\u0e21.2"]
+[21-Jan-2026 07:17:14 UTC] SQL: 
+        SELECT 
+          id, student_code, first_name, last_name, 
+          class_level, class_room, color
+        FROM students 
+        WHERE year_id = ? AND color = ?
+       AND class_level IN (?,?,?,?) ORDER BY class_level, class_room, CAST(number_in_room AS UNSIGNED)
+[21-Jan-2026 07:17:14 UTC] Params: [1,"\u0e0a\u0e21\u0e1e\u0e39","\u0e211","\u0e21.1","\u0e212","\u0e21.2"]
+[21-Jan-2026 07:17:14 UTC] Students found: 93
+[21-Jan-2026 07:17:14 UTC] First student: {"id":"805","student_code":"4141","first_name":"\u0e40\u0e14\u0e47\u0e01\u0e0a\u0e32\u0e22\u0e2b\u0e34\u0e23\u0e31\u0e0d","last_name":"\u0e42\u0e0a\u0e15\u0e34\u0e2a\u0e27\u0e31\u0e2a\u0e14\u0e34\u0e4c","class_level":"\u0e21.1","class_room":"1","color":"\u0e0a\u0e21\u0e1e\u0e39"}
+[21-Jan-2026 07:17:14 UTC] Final count: 93
+[21-Jan-2026 09:48:40 UTC] === LOAD STUDENTS DEBUG ===
+[21-Jan-2026 09:48:40 UTC] Sport ID: 61
+[21-Jan-2026 09:48:40 UTC] Color: ชมพู
+[21-Jan-2026 09:48:40 UTC] Current Student ID: 805
+[21-Jan-2026 09:48:40 UTC] Sport: {"id":"61","year_id":"1","category_id":"1","name":"\u0e1a\u0e32\u0e2a\u0e40\u0e01\u0e47\u0e15\u0e1a\u0e2d\u0e25 \u0e21\u0e31\u0e18\u0e22\u0e21\u0e28\u0e36\u0e01\u0e29\u0e32\u0e15\u0e2d\u0e19\u0e15\u0e49\u0e19 (\u0e0a\u0e32\u0e22)","gender":"\u0e0a","participant_type":"\u0e17\u0e35\u0e21","team_size":"10","min_participants":"5","grade_levels":"\u0e211,\u0e212,\u0e213","is_active":"1","created_at":"2025-11-03 17:12:07"}
+[21-Jan-2026 09:48:40 UTC] Adjusted grade levels: ["\u0e211","\u0e21.1","\u0e212","\u0e21.2","\u0e213","\u0e21.3"]
+[21-Jan-2026 09:48:40 UTC] SQL: 
+        SELECT 
+          id, student_code, first_name, last_name, 
+          class_level, class_room, color
+        FROM students 
+        WHERE year_id = ? AND color = ?
+       AND class_level IN (?,?,?,?,?,?) ORDER BY class_level, class_room, CAST(number_in_room AS UNSIGNED)
+[21-Jan-2026 09:48:40 UTC] Params: [1,"\u0e0a\u0e21\u0e1e\u0e39","\u0e211","\u0e21.1","\u0e212","\u0e21.2","\u0e213","\u0e21.3"]
+[21-Jan-2026 09:48:40 UTC] Students found: 143
+[21-Jan-2026 09:48:40 UTC] First student: {"id":"805","student_code":"4141","first_name":"\u0e40\u0e14\u0e47\u0e01\u0e0a\u0e32\u0e22\u0e2b\u0e34\u0e23\u0e31\u0e0d","last_name":"\u0e42\u0e0a\u0e15\u0e34\u0e2a\u0e27\u0e31\u0e2a\u0e14\u0e34\u0e4c","class_level":"\u0e21.1","class_room":"1","color":"\u0e0a\u0e21\u0e1e\u0e39"}
+[21-Jan-2026 09:48:40 UTC] Final count: 143

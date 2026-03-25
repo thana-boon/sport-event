@@ -162,6 +162,7 @@ $editing = null;
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_event'])) {
   $eventId   = (int)($_POST['event_id'] ?? 0);
   $eventCode = trim($_POST['event_code'] ?? '');
+  $competitionTime = trim($_POST['competition_time'] ?? '');
   $sportId   = (int)($_POST['sport_id'] ?? 0);
   $bestText  = trim($_POST['best_student_text'] ?? '');
   $bestTime  = trim($_POST['best_time'] ?? '');
@@ -187,23 +188,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_event'])) {
 
   if ($eventId > 0) {
     $sql = "UPDATE athletics_events
-            SET event_code=:code, sport_id=:sport_id, best_student_id=:best_id,
+            SET event_code=:code, competition_time=:comp_time, sport_id=:sport_id, best_student_id=:best_id,
                 best_time=:best_time, best_year_be=:best_year, notes=:notes
             WHERE id=:id AND year_id=:y";
     $st = $pdo->prepare($sql);
     $st->execute([
-      ':code'=>$eventCode, ':sport_id'=>$sportId, ':best_id'=>$bestStudentId,
+      ':code'=>$eventCode, ':comp_time'=>($competitionTime===''?null:$competitionTime), 
+      ':sport_id'=>$sportId, ':best_id'=>$bestStudentId,
       ':best_time'=>$bestTime, ':best_year'=>($bestYear===''?null:$bestYear),
       ':notes'=>$notes, ':id'=>$eventId, ':y'=>$yearId
     ]);
     $_SESSION['flash'] = ['type'=>'success','msg'=>'อัปเดตแล้ว'];
   } else {
     $sql = "INSERT INTO athletics_events
-            (year_id, event_code, sport_id, best_student_id, best_time, best_year_be, notes)
-            VALUES (:y,:code,:sport_id,:best_id,:best_time,:best_year,:notes)";
+            (year_id, event_code, competition_time, sport_id, best_student_id, best_time, best_year_be, notes)
+            VALUES (:y,:code,:comp_time,:sport_id,:best_id,:best_time,:best_year,:notes)";
     $st = $pdo->prepare($sql);
     $st->execute([
-      ':y'=>$yearId, ':code'=>$eventCode, ':sport_id'=>$sportId, ':best_id'=>$bestStudentId,
+      ':y'=>$yearId, ':code'=>$eventCode, ':comp_time'=>($competitionTime===''?null:$competitionTime),
+      ':sport_id'=>$sportId, ':best_id'=>$bestStudentId,
       ':best_time'=>$bestTime, ':best_year'=>($bestYear===''?null:$bestYear), ':notes'=>$notes
     ]);
     $_SESSION['flash'] = ['type'=>'success','msg'=>'เพิ่มรายการแล้ว'];
@@ -229,7 +232,7 @@ if (isset($_GET['edit'])) {
 // ---------------------- ดึงรายการที่สร้างไว้ ----------------------
 $sqlEvents = "
   SELECT
-    ae.id, ae.event_code, ae.sport_id, ae.best_student_id, ae.best_time, ae.best_year_be, ae.notes,
+    ae.id, ae.event_code, ae.competition_time, ae.sport_id, ae.best_student_id, ae.best_time, ae.best_year_be, ae.notes,
     s.name AS sport_name, s.gender, s.participant_type, s.grade_levels, s.team_size,
     CONCAT(st.first_name,' ',st.last_name) AS best_student_name
   FROM athletics_events ae
@@ -287,6 +290,8 @@ include __DIR__ . '/../includes/navbar.php';
     <h5 class="mb-0">กำหนดรหัส "รายการกรีฑา" • <?=e($yearName)?> ปีการศึกษา</h5>
     <div class="d-flex gap-2">
       <a class="btn btn-outline-secondary" href="?import=prev" onclick="return confirm('คัดลอกจากปีก่อนเข้าปีนี้?');">คัดลอกจากปีก่อน</a>
+      <a class="btn btn-info" href="<?=BASE_URL?>/athletics_time_export.php">📥 Export Template เวลา</a>
+      <button type="button" class="btn btn-info" data-bs-toggle="modal" data-bs-target="#importModal">📤 Import เวลา</button>
       <a class="btn btn-success" href="<?=BASE_URL?>/reports_athletics_export.php?download=1">📖 สูจิบัตร PDF</a>
       <a class="btn btn-primary" href="<?=BASE_URL?>/reports_athletics_schedule.php?download=1">📋 ตารางการแข่งขัน</a>
     </div>
@@ -297,11 +302,16 @@ include __DIR__ . '/../includes/navbar.php';
     <div class="card-body">
       <form method="post" class="row g-3">
         <input type="hidden" name="event_id" value="<?= $editing? (int)$editing['id'] : 0 ?>">
-        <div class="col-md-3">
+        <div class="col-md-2">
           <label class="form-label">รหัส (เช่น 101)</label>
           <input type="text" name="event_code" class="form-control" value="<?= e($editing['event_code'] ?? '') ?>" placeholder="101">
         </div>
-        <div class="col-md-5">
+        <div class="col-md-2">
+          <label class="form-label">เวลาแข่งขัน</label>
+          <input type="time" name="competition_time" class="form-control" value="<?= e($editing['competition_time'] ?? '') ?>">
+          <div class="form-text">เช่น 08:30</div>
+        </div>
+        <div class="col-md-4">
           <label class="form-label">กีฬา/เงื่อนไข (เฉพาะกรีฑา)</label>
           <select name="sport_id" class="form-select" required>
             <option value="">— เลือกกีฬา —</option>
@@ -351,6 +361,7 @@ include __DIR__ . '/../includes/navbar.php';
             <tr>
               <th style="width:120px">จัดการ</th>
               <th style="width:90px">รหัส</th>
+              <th style="width:100px" class="text-center">เวลาแข่งขัน</th>
               <th>รายการ</th>
               <th style="width:230px" class="text-center">สถิติดีที่สุด</th>
               <th style="width:120px" class="text-center">เวลา</th>
@@ -358,7 +369,7 @@ include __DIR__ . '/../includes/navbar.php';
           </thead>
           <tbody>
             <?php if(!$events): ?>
-              <tr><td colspan="5" class="text-center text-muted py-4">ยังไม่มีรายการ</td></tr>
+              <tr><td colspan="6" class="text-center text-muted py-4">ยังไม่มีรายการ</td></tr>
             <?php else: foreach($events as $r): ?>
               <tr>
                 <td>
@@ -366,6 +377,13 @@ include __DIR__ . '/../includes/navbar.php';
                   <a class="btn btn-sm btn-outline-danger" onclick="return confirm('ลบรายการนี้?');" href="?action=delete&id=<?=$r['id']?>">ลบ</a>
                 </td>
                 <td><span class="badge bg-secondary"><?= $r['event_code']? e($r['event_code']) : '-' ?></span></td>
+                <td class="text-center">
+                  <?php if (!empty($r['competition_time'])): ?>
+                    <span class="badge bg-info"><?= e(substr($r['competition_time'], 0, 5)) ?></span>
+                  <?php else: ?>
+                    <span class="text-muted">—</span>
+                  <?php endif; ?>
+                </td>
                 <td>
                   <div class="fw-semibold"><?= e($r['sport_name'] ?? '-') ?></div>
                   <div class="text-muted small">
@@ -392,6 +410,39 @@ include __DIR__ . '/../includes/navbar.php';
             <?php endforeach; endif; ?>
           </tbody>
         </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal สำหรับ Import -->
+  <div class="modal fade" id="importModal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Import เวลาแข่งขัน</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <form method="post" action="<?=BASE_URL?>/athletics_time_import.php" enctype="multipart/form-data">
+          <div class="modal-body">
+            <div class="alert alert-info">
+              <strong>วิธีใช้งาน:</strong>
+              <ol class="mb-0 mt-2">
+                <li>คลิก "Export Template เวลา" เพื่อดาวน์โหลดไฟล์ข้อมูลปัจจุบัน</li>
+                <li>เปิดไฟล์ CSV ด้วย Excel หรือ Google Sheets</li>
+                <li>แก้ไขคอลัมน์ "เวลาแข่งขัน" ในรูปแบบ HH:MM (เช่น 08:30, 14:45)</li>
+                <li>บันทึกไฟล์แล้ว Upload กลับเข้ามา</li>
+              </ol>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">เลือกไฟล์ CSV</label>
+              <input type="file" name="csv_file" class="form-control" accept=".csv" required>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">ยกเลิก</button>
+            <button type="submit" class="btn btn-primary">นำเข้าข้อมูล</button>
+          </div>
+        </form>
       </div>
     </div>
   </div>

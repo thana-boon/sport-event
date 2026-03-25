@@ -177,6 +177,17 @@ $years = $stmt->fetchAll();
 include __DIR__ . '/../includes/header.php';
 include __DIR__ . '/../includes/navbar.php';
 ?>
+
+<!-- เพิ่ม SweetAlert2 -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+<style>
+  .swal2-popup {
+    font-family: 'Kanit', sans-serif;
+  }
+</style>
+
 <main class="container py-4">
   <div class="row">
     <div class="col-lg-5">
@@ -185,15 +196,29 @@ include __DIR__ . '/../includes/navbar.php';
           <h5 class="card-title mb-3">เพิ่มปีการศึกษา</h5>
 
           <?php if ($errors): ?>
-            <div class="alert alert-danger">
-              <?php echo implode('<br>', array_map(fn($x)=>htmlspecialchars($x,ENT_QUOTES,'UTF-8'), $errors)); ?>
-            </div>
+            <script>
+              Swal.fire({
+                icon: 'error',
+                title: 'เกิดข้อผิดพลาด!',
+                html: '<?php echo addslashes(implode("<br>", array_map(fn($x)=>htmlspecialchars($x,ENT_QUOTES,"UTF-8"), $errors))); ?>',
+                confirmButtonText: 'ตรวจสอบ',
+                confirmButtonColor: '#dc3545'
+              });
+            </script>
           <?php endif; ?>
 
           <?php if ($messages): ?>
-            <div class="alert alert-success">
-              <?php echo implode('<br>', array_map(fn($x)=>htmlspecialchars($x,ENT_QUOTES,'UTF-8'), $messages)); ?>
-            </div>
+            <script>
+              Swal.fire({
+                icon: 'success',
+                title: 'สำเร็จ!',
+                html: '<?php echo addslashes(implode("<br>", array_map(fn($x)=>htmlspecialchars($x,ENT_QUOTES,"UTF-8"), $messages))); ?>',
+                confirmButtonText: 'ตกลง',
+                confirmButtonColor: '#0d6efd',
+                timer: 3000,
+                timerProgressBar: true
+              });
+            </script>
           <?php endif; ?>
 
           <form method="post" action="<?php echo BASE_URL; ?>/years.php" class="row g-3">
@@ -246,10 +271,10 @@ include __DIR__ . '/../includes/navbar.php';
                     <td>
                       <div class="d-flex gap-2 flex-wrap">
                         <?php if ((int)$y['is_active'] !== 1): ?>
-                          <form method="post" action="<?php echo BASE_URL; ?>/years.php" onsubmit="return confirm('ตั้งปีการศึกษานี้เป็นปีที่ใช้งานอยู่?');">
+                          <form method="post" action="<?php echo BASE_URL; ?>/years.php" id="activateForm<?php echo (int)$y['id']; ?>">
                             <input type="hidden" name="action" value="activate">
                             <input type="hidden" name="id" value="<?php echo (int)$y['id']; ?>">
-                            <button class="btn btn-sm btn-outline-success">ตั้งเป็น Active</button>
+                            <button type="button" class="btn btn-sm btn-outline-success" onclick="confirmActivate(<?php echo (int)$y['id']; ?>, '<?php echo addslashes($y['title']); ?>')">ตั้งเป็น Active</button>
                           </form>
                         <?php endif; ?>
 
@@ -263,10 +288,10 @@ include __DIR__ . '/../includes/navbar.php';
                           แก้ไข
                         </button>
 
-                        <form method="post" action="<?php echo BASE_URL; ?>/years.php" onsubmit="return confirm('ต้องการลบรายการนี้?');">
+                        <form method="post" action="<?php echo BASE_URL; ?>/years.php" id="deleteForm<?php echo (int)$y['id']; ?>">
                           <input type="hidden" name="action" value="delete">
                           <input type="hidden" name="id" value="<?php echo (int)$y['id']; ?>">
-                          <button class="btn btn-sm btn-outline-danger">ลบ</button>
+                          <button type="button" class="btn btn-sm btn-outline-danger" onclick="confirmDelete(<?php echo (int)$y['id']; ?>, '<?php echo addslashes($y['title']); ?>')">ลบ</button>
                         </form>
                       </div>
                     </td>
@@ -322,5 +347,42 @@ if (editModal) {
     document.getElementById('edit-year').value  = button.getAttribute('data-year');
     document.getElementById('edit-title').value = button.getAttribute('data-title');
   });
+}
+
+// SweetAlert2 Confirmations
+async function confirmActivate(id, title) {
+  const result = await Swal.fire({
+    icon: 'question',
+    title: 'ตั้งเป็นปีการศึกษาปัจจุบัน?',
+    html: `ตั้ง <strong>${title}</strong> เป็นปีที่ใช้งานอยู่<br><span class="text-warning">ปีเดิมจะถูกปิดอัตโนมัติ</span>`,
+    showCancelButton: true,
+    confirmButtonText: 'ยืนยัน',
+    cancelButtonText: 'ยกเลิก',
+    confirmButtonColor: '#198754',
+    cancelButtonColor: '#6c757d',
+    reverseButtons: true
+  });
+  
+  if (result.isConfirmed) {
+    document.getElementById('activateForm' + id).submit();
+  }
+}
+
+async function confirmDelete(id, title) {
+  const result = await Swal.fire({
+    icon: 'warning',
+    title: 'ยืนยันการลบ?',
+    html: `ลบปีการศึกษา <strong>${title}</strong><br><span class="text-danger fw-bold">ไม่สามารถกู้คืนได้!</span>`,
+    showCancelButton: true,
+    confirmButtonText: 'ยืนยันการลบ',
+    cancelButtonText: 'ยกเลิก',
+    confirmButtonColor: '#dc3545',
+    cancelButtonColor: '#6c757d',
+    reverseButtons: true
+  });
+  
+  if (result.isConfirmed) {
+    document.getElementById('deleteForm' + id).submit();
+  }
 }
 </script>

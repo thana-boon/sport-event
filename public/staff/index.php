@@ -1,5 +1,5 @@
 <?php
-// public/staff/index.php  (status badges per category with limit colors)
+// public/staff/index.php  (status badges per category with limit colors + คลิกดูรายละเอียด)
 require_once __DIR__ . '/../../config/config.php';
 require_once __DIR__ . '/../../config/db.php';
 require_once __DIR__ . '/../../lib/helpers.php';
@@ -22,6 +22,103 @@ if (!$yearId) {
   exit;
 }
 function e($s){ return htmlspecialchars($s, ENT_QUOTES, 'UTF-8'); }
+
+// -------- AJAX: ดูรายละเอียดกีฬาที่ลงทะเบียน --------
+if (isset($_GET['ajax']) && $_GET['ajax'] === 'student_sports') {
+  header('Content-Type: application/json; charset=utf-8');
+  
+  $studentId = (int)($_GET['student_id'] ?? 0);
+  
+  if ($studentId > 0) {
+    // ดึงข้อมูลนักเรียน
+    $stInfo = $pdo->prepare("SELECT first_name, last_name, student_code, class_level, class_room, number_in_room FROM students WHERE id = ? AND year_id = ?");
+    $stInfo->execute([$studentId, $yearId]);
+    $student = $stInfo->fetch(PDO::FETCH_ASSOC);
+    
+    if (!$student) {
+      echo json_encode(['success' => false, 'message' => 'ไม่พบข้อมูลนักเรียน'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    
+    // ดึงกีฬาที่ลงทะเบียน
+    $stmt = $pdo->prepare("
+      SELECT 
+        sc.id AS category_id,
+        sc.name AS category_name,
+        sp.name AS sport_name,
+        sp.gender, sp.participant_type, sp.grade_levels
+      FROM registrations r
+      JOIN sports sp ON sp.id = r.sport_id
+      JOIN sport_categories sc ON sc.id = sp.category_id
+      WHERE r.student_id = :sid AND r.year_id = :y
+      ORDER BY sc.name, sp.name
+    ");
+    $stmt->execute([':sid' => $studentId, ':y' => $yearId]);
+    $sports = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    
+    // จัดกลุ่มตามหมวด
+    $grouped = [];
+    foreach ($sports as $sport) {
+      $catId = $sport['category_id'];
+      $catName = $sport['category_name'];
+      if (!isset($grouped[$catId])) {
+        $grouped[$catId] = [
+          'name' => $catName,
+          'sports' => []
+        ];
+      }
+      $grouped[$catId]['sports'][] = $sport;
+    }
+    
+    $html = '<div class="modal-body">';
+    
+    if (empty($grouped)) {
+      $html .= '<div class="text-center text-muted py-4">ยังไม่ได้ลงทะเบียนกีฬาใดๆ</div>';
+    } else {
+      foreach ($grouped as $catId => $data) {
+        $catName = htmlspecialchars($data['name'], ENT_QUOTES, 'UTF-8');
+        $count = count($data['sports']);
+        
+        $html .= '<div class="mb-3">';
+        $html .= '<h6 class="fw-bold text-primary mb-2">📂 ' . $catName . ' (' . $count . ' รายการ)</h6>';
+        $html .= '<ul class="mb-0">';
+        
+        foreach ($data['sports'] as $sport) {
+          $sportName = htmlspecialchars($sport['sport_name'], ENT_QUOTES, 'UTF-8');
+          $gender = htmlspecialchars($sport['gender'] ?? '', ENT_QUOTES, 'UTF-8');
+          $type = htmlspecialchars($sport['participant_type'] ?? '', ENT_QUOTES, 'UTF-8');
+          $grades = htmlspecialchars($sport['grade_levels'] ?? '', ENT_QUOTES, 'UTF-8');
+          
+          $details = array_filter([$gender, $type, $grades]);
+          $detailsStr = !empty($details) ? ' <span class="text-muted small">(' . implode(', ', $details) . ')</span>' : '';
+          
+          $html .= '<li>' . $sportName . $detailsStr . '</li>';
+        }
+        
+        $html .= '</ul></div>';
+      }
+    }
+    
+    $html .= '</div>';
+    
+    $studentName = htmlspecialchars($student['first_name'] . ' ' . $student['last_name'], ENT_QUOTES, 'UTF-8');
+    $studentCode = htmlspecialchars($student['student_code'], ENT_QUOTES, 'UTF-8');
+    $studentClass = htmlspecialchars($student['class_level'] . '/' . $student['class_room'], ENT_QUOTES, 'UTF-8');
+    $studentNumber = htmlspecialchars($student['number_in_room'], ENT_QUOTES, 'UTF-8');
+    
+    echo json_encode([
+      'success' => true,
+      'student_name' => $studentName,
+      'student_code' => $studentCode,
+      'student_class' => $studentClass,
+      'student_number' => $studentNumber,
+      'html' => $html
+    ], JSON_UNESCAPED_UNICODE);
+  } else {
+    echo json_encode(['success' => false, 'message' => 'ไม่พบข้อมูล'], JSON_UNESCAPED_UNICODE);
+  }
+  exit;
+}
 
 // -------- โหลดประเภทกีฬา + เพดานต่อคน (resolve ด้วย category_year_settings) --------
 $catStmt = $pdo->prepare("
@@ -61,7 +158,51 @@ $countAllStmt->execute([$yearId, $staffColor]);
 $totalStudents = (int)$countAllStmt->fetchColumn();
 $countRegStmt->execute([$yearId, $staffColor]);
 $registeredStudents = (int)$countRegStmt->fetchColumn();
-$notRegistered = max(0, $totalStudents - $registeredStudents);
+
+// คำนวณ % ความคืบหน้าการลงทะเบียนรายการกีฬา
+// นับจำนวนคนที่ต้องลงทะเบียนทั้งหมด (รวม team_size ของทุกกีฬา)
+$totalSlotsStmt = $pdo->prepare("
+  SELECT COALESCE(SUM(CASE WHEN team_size > 0 THEN team_size ELSE 1 END), 0) 
+  FROM sports 
+  WHERE year_id = ? AND is_active = 1
+");
+$totalSlotsStmt->execute([$yearId]);
+$totalSlots = (int)$totalSlotsStmt->fetchColumn();
+
+// นับจำนวนคนที่ลงทะเบียนไปแล้ว (กรองตามสีของ staff)
+$registeredSlotsStmt = $pdo->prepare("
+  SELECT COUNT(r.id)
+  FROM registrations r
+  JOIN students s ON s.id = r.student_id AND s.year_id = r.year_id
+  WHERE r.year_id = ? AND s.color = ?
+");
+$registeredSlotsStmt->execute([$yearId, $staffColor]);
+$registeredSlots = (int)$registeredSlotsStmt->fetchColumn();
+
+// คำนวณเปอร์เซ็นต์
+$sportProgressPercent = $totalSlots > 0 ? round(($registeredSlots / $totalSlots) * 100, 1) : 0;
+
+// นับจำนวนนักกีฬาที่ลงทะเบียนเกินจำกัด
+$overLimitStmt = $pdo->prepare("
+  SELECT COUNT(DISTINCT student_id) AS over_count
+  FROM (
+    SELECT 
+      r.student_id,
+      sc.id AS category_id,
+      COUNT(DISTINCT r.sport_id) AS sport_count,
+      COALESCE(cys.max_per_student, sc.max_per_student, 999) AS max_allowed
+    FROM registrations r
+    JOIN sports sp ON sp.id = r.sport_id AND sp.year_id = r.year_id
+    JOIN sport_categories sc ON sc.id = sp.category_id
+    LEFT JOIN category_year_settings cys ON cys.category_id = sc.id AND cys.year_id = r.year_id
+    JOIN students s ON s.id = r.student_id AND s.year_id = r.year_id
+    WHERE r.year_id = :y AND s.color = :c
+    GROUP BY r.student_id, sc.id, cys.max_per_student, sc.max_per_student
+    HAVING sport_count > max_allowed
+  ) AS over_limit_students
+");
+$overLimitStmt->execute([':y' => $yearId, ':c' => $staffColor]);
+$overLimitCount = (int)$overLimitStmt->fetchColumn();
 
 $where = ["s.year_id=:y", "s.color=:c"];
 $params = [":y"=>$yearId, ":c"=>$staffColor];
@@ -86,8 +227,9 @@ $sqlStudents = "
     CASE WHEN s.class_level LIKE 'ป%' THEN 1
          WHEN s.class_level LIKE 'ม%' THEN 2
          ELSE 3 END,
-    CAST(SUBSTRING(s.class_level, 2) AS UNSIGNED),
-    s.class_room, s.number_in_room, s.first_name, s.last_name
+    CAST(REGEXP_REPLACE(s.class_level, '[^0-9]', '') AS UNSIGNED),
+    CAST(s.class_room AS UNSIGNED),
+    CAST(s.number_in_room AS UNSIGNED)
 ";
 $st = $pdo->prepare($sqlStudents);
 $st->execute($params);
@@ -127,6 +269,10 @@ $pageTitle = 'รายชื่อนักเรียน - สี' . $staffCo
 include __DIR__ . '/../../includes/header.php';
 include __DIR__ . '/navbar.php';
 ?>
+
+<!-- เพิ่ม SweetAlert2 -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
 <style>
   body {
@@ -169,6 +315,19 @@ include __DIR__ . '/navbar.php';
     border-radius: 1rem;
     font-weight: 500;
     font-size: 0.85rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: inline-block;
+  }
+  .status-badge:hover {
+    transform: scale(1.05);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  }
+  .status-badge.clickable {
+    border: 2px solid transparent;
+  }
+  .status-badge.clickable:hover {
+    border-color: currentColor;
   }
   .empty-state {
     padding: 3rem;
@@ -182,6 +341,16 @@ include __DIR__ . '/navbar.php';
     border-radius: 1rem;
     margin-bottom: 2rem;
     box-shadow: 0 8px 24px <?php echo $currentTheme['hex']; ?>33;
+  }
+  .swal2-popup {
+    font-family: 'Kanit', sans-serif;
+  }
+  .swal2-html-container ul {
+    text-align: left;
+    list-style-position: inside;
+  }
+  .swal2-html-container .mb-3:last-child {
+    margin-bottom: 0 !important;
   }
 </style>
 
@@ -224,7 +393,7 @@ include __DIR__ . '/navbar.php';
         <div class="card-body">
           <div class="d-flex justify-content-between align-items-start mb-2">
             <div>
-              <div class="small opacity-75">✅ ลงทะเบียนแล้ว</div>
+              <div class="small opacity-75">✅ นักเรียนที่ลงทะเบียน</div>
               <div class="h2 mb-0 fw-bold"><?php echo number_format($registeredStudents); ?></div>
               <small class="opacity-75">คิดเป็น <?php echo $totalStudents>0? number_format(($registeredStudents/$totalStudents)*100,1):'0'; ?>%</small>
             </div>
@@ -233,19 +402,54 @@ include __DIR__ . '/navbar.php';
         </div>
       </div>
     </div>
-    
+
     <div class="col-md-4">
-      <div class="card stat-card shadow-sm" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white;">
+      <div class="card stat-card shadow-sm" style="background: linear-gradient(135deg, #eb3349 0%, #f45c43 100%); color: white;">
         <div class="card-body">
           <div class="d-flex justify-content-between align-items-start mb-2">
             <div>
-              <div class="small opacity-75">⏳ ยังไม่ลงทะเบียน</div>
-              <div class="h2 mb-0 fw-bold"><?php echo number_format($notRegistered); ?></div>
-              <small class="opacity-75">คิดเป็น <?php echo $totalStudents>0? number_format(($notRegistered/$totalStudents)*100,1):'0'; ?>%</small>
+              <div class="small opacity-75">⚠️ นักเรียนที่ลงเกิน</div>
+              <div class="h2 mb-0 fw-bold"><?php echo number_format($overLimitCount); ?></div>
+              <small class="opacity-75">
+                <?php if ($overLimitCount > 0): ?>
+                  ต้องแก้ไข
+                <?php else: ?>
+                  ปกติทั้งหมด ✓
+                <?php endif; ?>
+              </small>
             </div>
-            <div class="stat-icon">📝</div>
+            <div class="stat-icon">🔴</div>
           </div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Progress Card -->
+  <div class="card shadow-sm mb-4" style="border: none; border-radius: 1rem; overflow: hidden;">
+    <div class="card-body" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white;">
+      <div class="d-flex justify-content-between align-items-start mb-3">
+        <div>
+          <h6 class="mb-1 opacity-75">📊 ความคืบหน้าการลงทะเบียนรายการกีฬา</h6>
+          <div class="h3 mb-0 fw-bold"><?php echo $sportProgressPercent; ?>%</div>
+        </div>
+        <div class="stat-icon">🎯</div>
+      </div>
+      
+      <div class="progress mb-2" style="height: 25px; border-radius: 1rem; background: rgba(255,255,255,0.3);">
+        <div class="progress-bar progress-bar-striped progress-bar-animated" 
+             role="progressbar" 
+             style="width: <?php echo $sportProgressPercent; ?>%; background: linear-gradient(90deg, #ffffff 0%, rgba(255,255,255,0.9) 100%); font-weight: 600; color: #333;"
+             aria-valuenow="<?php echo $sportProgressPercent; ?>" 
+             aria-valuemin="0" 
+             aria-valuemax="100">
+          <?php echo $sportProgressPercent; ?>%
+        </div>
+      </div>
+      
+      <div class="d-flex justify-content-between small opacity-90">
+        <span>✅ ลงทะเบียนแล้ว: <?php echo number_format($registeredSlots); ?> คน</span>
+        <span>📋 ต้องลงทั้งหมด: <?php echo number_format($totalSlots); ?> คน</span>
       </div>
     </div>
   </div>
@@ -332,7 +536,10 @@ include __DIR__ . '/navbar.php';
                     $textColor = $ok ? '#28a745' : '#dc3545';
                     $icon = $ok ? '✅' : '⚠️';
                   ?>
-                    <span class="status-badge me-1 mb-1" style="background: <?php echo $bgColor; ?>; color: <?php echo $textColor; ?>;">
+                    <span class="status-badge clickable me-1 mb-1" 
+                          style="background: <?php echo $bgColor; ?>; color: <?php echo $textColor; ?>;"
+                          onclick="showStudentSports(<?php echo $sid; ?>)"
+                          title="คลิกเพื่อดูรายละเอียด">
                       <?php echo $icon; ?> <?php echo e($cnt); ?> <?php echo e($catName); ?>
                     </span>
                   <?php endforeach; ?>
@@ -354,3 +561,83 @@ include __DIR__ . '/navbar.php';
 </main>
 
 <?php include __DIR__ . '/../../includes/footer.php'; ?>
+
+<!-- ย้าย SweetAlert2 มาไว้ก่อน footer และเพิ่ม script ให้ครบ -->
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+<script>
+async function showStudentSports(studentId) {
+  console.log('Fetching data for student ID:', studentId);
+  
+  try {
+    const url = `<?php echo BASE_URL; ?>/staff/index.php?ajax=student_sports&student_id=${studentId}`;
+    console.log('Fetching URL:', url);
+    
+    const response = await fetch(url);
+    console.log('Response status:', response.status);
+    
+    const text = await response.text();
+    console.log('Response text:', text);
+    
+    let data;
+    try {
+      data = JSON.parse(text);
+      console.log('Parsed data:', data);
+    } catch (e) {
+      console.error('JSON parse error:', e);
+      Swal.fire({
+        icon: 'error',
+        title: 'เกิดข้อผิดพลาด',
+        html: '<pre style="text-align:left; font-size:12px; max-height:300px; overflow:auto;">' + text + '</pre>',
+        confirmButtonColor: '#dc3545'
+      });
+      return;
+    }
+    
+    if (data.success) {
+      Swal.fire({
+        title: '<strong>📋 กีฬาที่ลงทะเบียน</strong>',
+        html: `
+          <div class="text-start mb-3">
+            <div class="fw-bold">${data.student_name}</div>
+            <div class="small text-muted">
+              รหัส: ${data.student_code} | 
+              ชั้น: ${data.student_class} 
+              เลขที่: ${data.student_number}
+            </div>
+          </div>
+          <hr>
+          ${data.html}
+        `,
+        icon: null,
+        confirmButtonText: 'ปิด',
+        confirmButtonColor: '<?php echo $currentTheme['hex']; ?>',
+        width: '600px',
+        customClass: {
+          popup: 'swal2-popup'
+        }
+      });
+    } else {
+      Swal.fire({
+        icon: 'error',
+        title: 'เกิดข้อผิดพลาด',
+        text: data.message || 'ไม่สามารถโหลดข้อมูลได้',
+        confirmButtonColor: '#dc3545'
+      });
+    }
+  } catch (error) {
+    console.error('Fetch error:', error);
+    Swal.fire({
+      icon: 'error',
+      title: 'เกิดข้อผิดพลาด',
+      html: `
+        <div class="text-start">
+          <strong>Error:</strong> ${error.message}<br>
+          <strong>Student ID:</strong> ${studentId}
+        </div>
+      `,
+      confirmButtonColor: '#dc3545'
+    });
+  }
+}
+</script>

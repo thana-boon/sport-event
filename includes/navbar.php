@@ -77,7 +77,7 @@ $hideNav = (strpos($uri, '/login.php') !== false)
 
 if (!$hideNav):
 ?>
-<nav class="navbar navbar-expand-lg navbar-dark bg-primary shadow-sm">
+<nav class="navbar navbar-expand-lg navbar-dark shadow-sm" style="background: linear-gradient(135deg, #0ea5e9 0%, #0369a1 100%);">
   <div class="container">
     <a class="navbar-brand fw-semibold" href="<?php echo BASE_URL; ?>/index.php">
       🏆 <?php echo e($brandText); ?>
@@ -123,18 +123,20 @@ if (!$hideNav):
 
           <!-- กลุ่ม: การลงทะบียน -->
           <li class="nav-item dropdown">
-            <a class="nav-link dropdown-toggle <?php echo in_array($current, ['regis.php','referee.php']) ? 'active' : ''; ?>" href="#" id="godmodeDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+            <a class="nav-link dropdown-toggle <?php echo in_array($current, ['regis.php','referee.php','player.php']) ? 'active' : ''; ?>" href="#" id="godmodeDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
               ⚡ GodMode
             </a>
             <ul class="dropdown-menu" aria-labelledby="godmodeDropdown">
               <li><a class="dropdown-item <?php echo nav_active('regis.php',$current); ?>" href="<?php echo BASE_URL; ?>/regis.php">✍️ จัดการลงทะเบียนนักกีฬา</a></li>
               <li><a class="dropdown-item <?php echo nav_active('referee.php',$current); ?>" href="<?php echo BASE_URL; ?>/referee.php">🎖️ บันทึกผลการแข่งขัน</a></li>
+              <li><hr class="dropdown-divider"></li>
+              <li><a class="dropdown-item <?php echo nav_active('player.php',$current); ?>" href="<?php echo BASE_URL; ?>/player.php">🔄 จัดการการเปลี่ยนตัว</a></li>
             </ul>
           </li>
 
           <!-- เมนูรายงานและ Logs แบบ dropdown -->
           <li class="nav-item dropdown">
-            <a class="nav-link dropdown-toggle <?php echo in_array($current, ['reports.php','reports_booklet.php','reports_athletics.php','logs.php']) ? 'active' : ''; ?>" href="#" id="reportDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+            <a class="nav-link dropdown-toggle <?php echo in_array($current, ['reports.php','reports_booklet.php','reports_athletics.php','reports_calendar.php','upload_cover.php','logs.php','backup.php']) ? 'active' : ''; ?>" href="#" id="reportDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
               📋 รายงาน
             </a>
             <ul class="dropdown-menu" aria-labelledby="reportDropdown">
@@ -153,10 +155,26 @@ if (!$hideNav):
                   📗 สูจิบัตรนักกีฬา (กรีฑา)
                 </a>
               </li>
+              <li>
+                <a class="dropdown-item<?php echo $current === 'reports_calendar.php' ? ' active' : ''; ?>" href="<?php echo BASE_URL; ?>/reports_calendar.php">
+                  📅 ปฏิทินกีฬา
+                </a>
+              </li>
+              <li><hr class="dropdown-divider"></li>
+              <li>
+                <a class="dropdown-item<?php echo $current === 'upload_cover.php' ? ' active' : ''; ?>" href="<?php echo BASE_URL; ?>/upload_cover.php">
+                  📄 อัปโหลดหน้าปกกีฬา
+                </a>
+              </li>
               <li><hr class="dropdown-divider"></li>
               <li>
                 <a class="dropdown-item<?php echo $current === 'logs.php' ? ' active' : ''; ?>" href="<?php echo BASE_URL; ?>/logs.php">
                   📜 Activity Logs
+                </a>
+              </li>
+              <li>
+                <a class="dropdown-item<?php echo $current === 'backup.php' ? ' active' : ''; ?>" href="<?php echo BASE_URL; ?>/backup.php">
+                  💾 สำรองข้อมูล
                 </a>
               </li>
             </ul>

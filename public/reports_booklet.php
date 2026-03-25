@@ -3,6 +3,11 @@ require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../lib/helpers.php';
 
+// เพิ่ม memory limit สำหรับ export PDF
+ini_set('memory_limit', '512M');
+// เพิ่ม execution time สำหรับ export PDF ที่มีข้อมูลเยอะ (5 นาที)
+set_time_limit(300);
+
 use Dompdf\Dompdf;
 use Dompdf\Options;
 
@@ -104,13 +109,42 @@ if (!isset($_GET['export'])) {
         <div class="card shadow-sm">
           <div class="card-header bg-white"><h5 class="mb-0">ดาวน์โหลดรายงาน</h5></div>
           <div class="card-body">
-            <p class="text-muted">สูจิบัตรรายชื่อนักกีฬา — ปีการศึกษา: <strong><?php echo e($yearName); ?></strong></p>
-            <div class="d-flex gap-2">
-              <a class="btn btn-success" href="<?php echo BASE_URL; ?>/reports_booklet.php?export=1" target="_blank">สูจิบัตรรายชื่อ</a>
-              <a class="btn btn-info" href="<?php echo BASE_URL; ?>/reports_matches.php?export=1" target="_blank">รายการแข่งขัน</a>
-            </div>
+            <p class="text-muted">Export รวมเล่ม (ปก + รายการแข่งขัน + สูจิบัตร) — ปีการศึกษา: <strong><?php echo e($yearName); ?></strong></p>
+            <?php
+              // ดึงชื่อกีฬาหลัก (คำแรก) แบบ DISTINCT
+              $allSports = $pdo->prepare("SELECT DISTINCT 
+                                            SUBSTRING_INDEX(s.name, ' ', 1) AS main_sport_name
+                                         FROM sports s
+                                         JOIN sport_categories c ON c.id = s.category_id
+                                         WHERE s.year_id = :y AND s.is_active = 1 AND c.name <> 'กรีฑา'
+                                         ORDER BY main_sport_name");
+              $allSports->execute([':y'=>$yearId]);
+              $sportsList = $allSports->fetchAll(PDO::FETCH_ASSOC);
+            ?>
+            <div class="mb-2"><strong>Export รวมเล่ม (ปก + รายการแข่งขัน + สูจิบัตร):</strong></div>
+            <select id="combinedSportSelect" class="form-select mb-2">
+              <option value="">-- เลือกกีฬา --</option>
+              <?php foreach($sportsList as $sp): ?>
+                <option value="<?php echo e($sp['main_sport_name']); ?>">
+                  <?php echo e($sp['main_sport_name']); ?>
+                </option>
+              <?php endforeach; ?>
+            </select>
+            <button class="btn btn-success" onclick="exportCombined()">📚 Export รวมเล่ม</button>
           </div>
         </div>
+        <script>
+        function exportCombined() {
+          var sel = document.getElementById('combinedSportSelect');
+          var sportName = sel.value;
+          if (!sportName) {
+            alert('กรุณาเลือกกีฬาก่อน');
+            return;
+          }
+          var url = '<?php echo BASE_URL; ?>/export_combined_booklet.php?sport_name=' + encodeURIComponent(sportName);
+          window.open(url, '_blank');
+        }
+        </script>
       </div>
 
       <div class="col-lg-5">
@@ -139,31 +173,95 @@ if (!isset($_GET['export'])) {
 }
 
 // ===== Export mode =====
+// ตรวจสอบว่ามีการเลือกกีฬาเฉพาะหรือไม่
+$selectedSportName = isset($_GET['sport_name']) ? trim($_GET['sport_name']) : '';
+
 // ดึงข้อมูลกีฬา เรียงตามชื่อกีฬา
-$sqlSports = "
-  SELECT s.id, s.name, s.gender, s.participant_type, s.team_size, s.grade_levels,
-         c.name AS category_name
-    FROM sports s
-    JOIN sport_categories c ON c.id = s.category_id
-   WHERE s.year_id = :y
-     AND s.is_active = 1
-     AND c.name <> 'กรีฑา'
-   ORDER BY s.name ASC, c.name ASC, s.participant_type ASC, s.gender ASC
-";
-$st = $pdo->prepare($sqlSports);
-$st->execute([':y'=>$yearId]);
+if ($selectedSportName !== '') {
+  // Export ทุกรายการของกีฬาที่เลือก (เช่น "ว่ายน้ำ" จะได้ทุกรายการที่ชื่อขึ้นต้นด้วย "ว่ายน้ำ")
+  $sqlSports = "
+    SELECT s.id, s.name, s.gender, s.participant_type, s.team_size, s.grade_levels,
+           c.name AS category_name,
+           CASE 
+             WHEN s.grade_levels LIKE 'ป%' OR s.grade_levels LIKE '%,ป%' THEN 1
+             WHEN s.grade_levels LIKE 'ม%' OR s.grade_levels LIKE '%,ม%' THEN 2
+             ELSE 3
+           END AS level_order,
+           CASE s.participant_type
+             WHEN 'เดี่ยว' THEN 1
+             WHEN 'ทีม' THEN 2
+             ELSE 3
+           END AS type_order
+      FROM sports s
+      JOIN sport_categories c ON c.id = s.category_id
+     WHERE s.year_id = :y
+       AND s.is_active = 1
+       AND s.name LIKE CONCAT(:sport_name, '%')
+     ORDER BY level_order ASC, type_order ASC, s.gender ASC, s.name ASC, c.name ASC
+  ";
+  $st = $pdo->prepare($sqlSports);
+  $st->execute([':y'=>$yearId, ':sport_name'=>$selectedSportName]);
+} else {
+  // Export ทั้งหมด
+  $sqlSports = "
+    SELECT s.id, s.name, s.gender, s.participant_type, s.team_size, s.grade_levels,
+           c.name AS category_name,
+           CASE 
+             WHEN s.grade_levels LIKE 'ป%' OR s.grade_levels LIKE '%,ป%' THEN 1
+             WHEN s.grade_levels LIKE 'ม%' OR s.grade_levels LIKE '%,ม%' THEN 2
+             ELSE 3
+           END AS level_order,
+           CASE s.participant_type
+             WHEN 'เดี่ยว' THEN 1
+             WHEN 'ทีม' THEN 2
+             ELSE 3
+           END AS type_order
+      FROM sports s
+      JOIN sport_categories c ON c.id = s.category_id
+     WHERE s.year_id = :y
+       AND s.is_active = 1
+       AND c.name <> 'กรีฑา'
+     ORDER BY level_order ASC, type_order ASC, s.gender ASC, s.name ASC, c.name ASC
+  ";
+  $st = $pdo->prepare($sqlSports);
+  $st->execute([':y'=>$yearId]);
+}
 $sports = $st->fetchAll(PDO::FETCH_ASSOC);
 
-function loadPlayersOfSport(PDO $pdo,int $yearId,int $sportId){
-  $sql = "SELECT r.color, st.student_code, st.first_name, st.last_name,
-                 st.class_level, st.class_room, st.number_in_room
-            FROM registrations r
-            JOIN students st ON st.id=r.student_id
-           WHERE r.year_id=:y AND r.sport_id=:s
-           ORDER BY st.class_level, st.class_room, st.number_in_room, st.student_code";
-  $q = $pdo->prepare($sql);
-  $q->execute([':y'=>$yearId, ':s'=>$sportId]);
-  return $q->fetchAll(PDO::FETCH_ASSOC);
+// ดึงข้อมูลนักกีฬาทั้งหมดครั้งเดียว (แก้ N+1 Query Problem)
+$allPlayers = [];
+if (!empty($sports)) {
+  $sportIds = array_column($sports, 'id');
+  $placeholders = implode(',', array_fill(0, count($sportIds), '?'));
+  
+  $sqlPlayers = "SELECT r.sport_id, r.color, st.student_code, st.first_name, st.last_name,
+                        st.class_level, st.class_room, st.number_in_room
+                   FROM registrations r
+                   JOIN students st ON st.id = r.student_id
+                  WHERE r.year_id = ? AND r.sport_id IN ($placeholders)
+                  ORDER BY r.sport_id, r.color, st.class_level, st.class_room, 
+                           CAST(st.number_in_room AS UNSIGNED), st.student_code";
+  
+  $stPlayers = $pdo->prepare($sqlPlayers);
+  $stPlayers->execute(array_merge([$yearId], $sportIds));
+  
+  // Group ตาม sport_id
+  while ($row = $stPlayers->fetch(PDO::FETCH_ASSOC)) {
+    $sid = $row['sport_id'];
+    unset($row['sport_id']); // ลบ sport_id ออกจาก array
+    if (!isset($allPlayers[$sid])) {
+      $allPlayers[$sid] = [];
+    }
+    $allPlayers[$sid][] = $row;
+  }
+  
+  $stPlayers->closeCursor();
+  unset($stPlayers);
+}
+
+// ฟังก์ชัน helper แทน loadPlayersOfSport
+function getPlayersOfSport($allPlayers, $sportId) {
+  return $allPlayers[$sportId] ?? [];
 }
 
 // ฟังก์ชันแปลงชื่อสีเป็นรหัสสี
@@ -196,7 +294,7 @@ if (!empty($meta['logo_path'])) {
 
 // เพิ่ม CSS สำหรับ page break
 $css = '
-  @page { size: A4 portrait; margin: 14mm 12mm 16mm 12mm; }
+  @page { size: A4 portrait; margin: 14mm 12mm 16mm 25mm; }
   .page-break { page-break-before: always; }
   @font-face { font-family:"THSarabunNew";
                src: url("assets/fonts/THSarabunNew.ttf") format("truetype"); }
@@ -206,10 +304,12 @@ $css = '
   body{ font-family:"THSarabunNew", DejaVu Sans, sans-serif; font-size:14pt; line-height:1.1; }
   h1{ font-size:18pt; margin:0; text-align:center; font-weight:bold; }
   .meta{ text-align:center; margin-top:2mm; color:#444; }
-  table{ width:100%; border-collapse:collapse; }
+  table{ width:100%; border-collapse:collapse; page-break-inside:avoid; }
   th,td{ border:1px solid #000; padding:0.2mm 1.5px; vertical-align:middle; height: 3.6mm; }
   th{ text-align:center; font-weight:bold; background:#f7f7f7; }
-  .sport-head{ margin-top:10mm; font-size:14pt; font-weight:bold; }
+  .sport-head{ margin-top:3mm; font-size:14pt; font-weight:bold; }
+  .sport-section{ }
+  .color-table-wrapper{ page-break-inside:avoid; }
   .small{ font-size:10pt; color:#666; }
   .nowrap{ white-space:nowrap; }
   .header-table td { border:none; }
@@ -224,9 +324,19 @@ function report_header($logoHtml, $yearName, $meta, $edition, $rangeStr) {
       .  '<h1>สูจิบัตรรายชื่อนักกีฬา</h1>'
       .  '<div class="meta">'. e($yearName);
   if (($meta['title'] ?? '') !== '') { $h .= ' • '. e($meta['title']); }
-  if ($edition!=='') { $h .= ' • ครั้งที่ '. e($edition); }
-  if ($rangeStr!=='') { $h .= ' • '. e($rangeStr); }
-  $h .= '</div></td>';
+  $h .= '</div>';
+  
+  // เว้นบรรทัดแล้วแสดงครั้งที่และวันที่
+  if ($edition!=='' || $rangeStr!=='') {
+    $h .= '<div class="meta" style="margin-top:0.5mm;">';
+    $parts = [];
+    if ($edition!=='') { $parts[] = 'ครั้งที่ '. e($edition); }
+    if ($rangeStr!=='') { $parts[] = e($rangeStr); }
+    $h .= implode(' • ', $parts);
+    $h .= '</div>';
+  }
+  
+  $h .= '</td>';
   $h .= '<td style="width:25mm;"></td>';
   $h .= '</tr></table>';
   return $h;
@@ -250,41 +360,94 @@ if (!$sports){
     }
     $prevMainSport = $mainSport;
 
-    $players = loadPlayersOfSport($pdo,$yearId,(int)$sp['id']);
+    $players = getPlayersOfSport($allPlayers, (int)$sp['id']);
     $genderDisplay = formatGender($sp['gender']); // แปลง ช/ญ เป็น ชาย/หญิง
-    $html .= '<div class="sport-head">'. e($sp['name']) .' — '. e($sp['participant_type'])
-          .' • หมวด: '. e($sp['category_name']) .' • เพศ: '. e($genderDisplay) .'</div>';
-    if (!empty($sp['grade_levels'])){
-      $html .= '<div class="small">ชั้นที่เปิด: '. e($sp['grade_levels']) .'</div>';
-    }
-    $html .= '<table><thead><tr>
-                <th style="width:14mm">ลำดับ</th>
-                <th style="width:18mm">สี</th>
-                <th style="width:28mm">รหัส</th>
-                <th>ชื่อ - นามสกุล</th>
-                <th style="width:16mm">ชั้น</th>
-                <th style="width:12mm">ห้อง</th>
-                <th style="width:14mm">เลขที่</th>
-              </tr></thead><tbody>';
+    
+    $html .= '<div class="sport-section">';
+    
     if (!$players){
+      // ไม่มีนักกีฬา - หุ้มหัวข้อกับตารางว่างไว้ด้วยกัน
+      $html .= '<div class="color-table-wrapper">';
+      $html .= '<div class="sport-head">'. e($sp['name']) .' — '. e($sp['participant_type'])
+            .' • หมวด: '. e($sp['category_name']) .' • เพศ: '. e($genderDisplay) .'</div>';
+      if (!empty($sp['grade_levels'])){
+        $html .= '<div class="small">ชั้นที่เปิด: '. e($sp['grade_levels']) .'</div>';
+      }
+      $html .= '<table><thead><tr>
+                  <th style="width:14mm">ลำดับ</th>
+                  <th style="width:18mm">สี</th>
+                  <th style="width:28mm">รหัส</th>
+                  <th>ชื่อ - นามสกุล</th>
+                  <th style="width:16mm">ชั้น</th>
+                  <th style="width:12mm">ห้อง</th>
+                  <th style="width:14mm">เลขที่</th>
+                </tr></thead><tbody>';
       $html .= '<tr><td colspan="7" style="text-align:center">ยังไม่มีผู้ลงทะเบียน</td></tr>';
+      $html .= '</tbody></table>';
+      $html .= '</div>'; // ปิด color-table-wrapper
     }else{
-      $i=1;
+      // แยกนักกีฬาตามสี
+      $playersByColor = [];
       foreach($players as $p){
-        $fullname = trim($p['first_name'].' '.$p['last_name']);
-        $bg = color_bg($p['color']);
-        $html .= '<tr>
-                    <td class="nowrap" style="text-align:center">'.($i++).'</td>
-                    <td class="nowrap cell-color" style="background:'.$bg.'">'.e($p['color']).'</td>
-                    <td class="nowrap" style="text-align:center">'.e($p['student_code']).'</td>
-                    <td>'.e($fullname).'</td>
-                    <td class="nowrap" style="text-align:center">'.e($p['class_level']).'</td>
-                    <td class="nowrap" style="text-align:center">'.e($p['class_room']).'</td>
-                    <td class="nowrap" style="text-align:center">'.e($p['number_in_room']).'</td>
-                  </tr>';
+        $color = $p['color'];
+        if (!isset($playersByColor[$color])) {
+          $playersByColor[$color] = [];
+        }
+        $playersByColor[$color][] = $p;
+      }
+      
+      // สร้างตารางแยกตามสี (ไม่มี header แถบสี)
+      $colorOrder = ['เขียว', 'ฟ้า', 'ชมพู', 'ส้ม'];
+      $isFirstColor = true;
+      
+      foreach($colorOrder as $color){
+        if (!isset($playersByColor[$color])) continue;
+        
+        $colorPlayers = $playersByColor[$color];
+        
+        // หุ้มด้วย wrapper เพื่อไม่ให้หัวตารางแยกจากข้อมูล
+        $html .= '<div class="color-table-wrapper">';
+        
+        // ถ้าเป็นสีแรก ใส่หัวข้อกีฬาด้วย
+        if ($isFirstColor) {
+          $html .= '<div class="sport-head">'. e($sp['name']) .' — '. e($sp['participant_type'])
+                .' • หมวด: '. e($sp['category_name']) .' • เพศ: '. e($genderDisplay) .'</div>';
+          if (!empty($sp['grade_levels'])){
+            $html .= '<div class="small">ชั้นที่เปิด: '. e($sp['grade_levels']) .'</div>';
+          }
+          $isFirstColor = false;
+        }
+        
+        // สร้างตารางแยก มีคอลัมน์สีปกติ
+        $html .= '<table style="margin-top:3mm;"><thead><tr>
+                    <th style="width:14mm">ลำดับ</th>
+                    <th style="width:18mm">สี</th>
+                    <th style="width:28mm">รหัส</th>
+                    <th>ชื่อ - นามสกุล</th>
+                    <th style="width:16mm">ชั้น</th>
+                    <th style="width:12mm">ห้อง</th>
+                    <th style="width:14mm">เลขที่</th>
+                  </tr></thead><tbody>';
+        
+        $i=1;
+        foreach($colorPlayers as $p){
+          $fullname = trim($p['first_name'].' '.$p['last_name']);
+          $bg = color_bg($p['color']);
+          $html .= '<tr>
+                      <td class="nowrap" style="text-align:center">'.($i++).'</td>
+                      <td class="nowrap cell-color" style="background:'.$bg.'">'.e($p['color']).'</td>
+                      <td class="nowrap" style="text-align:center">'.e($p['student_code']).'</td>
+                      <td>'.e($fullname).'</td>
+                      <td class="nowrap" style="text-align:center">'.e($p['class_level']).'</td>
+                      <td class="nowrap" style="text-align:center">'.e($p['class_room']).'</td>
+                      <td class="nowrap" style="text-align:center">'.e($p['number_in_room']).'</td>
+                    </tr>';
+        }
+        $html .= '</tbody></table>';
+        $html .= '</div>'; // ปิด color-table-wrapper
       }
     }
-    $html .= '</tbody></table>';
+    $html .= '</div>'; // ปิด sport-section
   }
 }
 $html .= '</body></html>';

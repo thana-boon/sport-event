@@ -83,7 +83,22 @@ if ($action === 'create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 sprintf("เพิ่มนักเรียน: %s %s %s | รหัส: %s | ชั้น: %s/%d เลขที่: %d | สี: %s", 
                     $first_name, $last_name, '', $student_code, $class_level, $class_room, $number_in, $color));
             
-            $messages[] = 'เพิ่มนักเรียนเรียบร้อย';
+            // เก็บข้อความไว้ใน session
+            $_SESSION['success_message'] = 'เพิ่มนักเรียนเรียบร้อย';
+            
+            // Redirect กลับพร้อม filter จาก session
+            $filterParams = [];
+            if (!empty($_SESSION['students_filter'])) {
+                $savedFilter = $_SESSION['students_filter'];
+                if (!empty($savedFilter['color'])) $filterParams['color'] = $savedFilter['color'];
+                if (!empty($savedFilter['class_level'])) $filterParams['class_level'] = $savedFilter['class_level'];
+                if (!empty($savedFilter['class_room'])) $filterParams['class_room'] = $savedFilter['class_room'];
+                if (!empty($savedFilter['q'])) $filterParams['q'] = $savedFilter['q'];
+            }
+            
+            $redirectUrl = BASE_URL . '/students.php' . ($filterParams ? '?' . http_build_query($filterParams) : '');
+            header('Location: ' . $redirectUrl);
+            exit;
         } catch (Throwable $e) {
             // 🔥 LOG: เพิ่มนักเรียนไม่สำเร็จ
             log_activity('ERROR', 'students', null, 
@@ -145,7 +160,22 @@ if ($action === 'update' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     sprintf("แก้ไขนักเรียน ID:%d → %s %s | รหัส: %s", $id, $first_name, $last_name, $student_code));
             }
             
-            $messages[] = 'แก้ไขเรียบร้อย';
+            // เก็บข้อความไว้ใน session
+            $_SESSION['success_message'] = 'แก้ไขเรียบร้อย';
+            
+            // Redirect กลับพร้อม filter จาก session
+            $filterParams = [];
+            if (!empty($_SESSION['students_filter'])) {
+                $savedFilter = $_SESSION['students_filter'];
+                if (!empty($savedFilter['color'])) $filterParams['color'] = $savedFilter['color'];
+                if (!empty($savedFilter['class_level'])) $filterParams['class_level'] = $savedFilter['class_level'];
+                if (!empty($savedFilter['class_room'])) $filterParams['class_room'] = $savedFilter['class_room'];
+                if (!empty($savedFilter['q'])) $filterParams['q'] = $savedFilter['q'];
+            }
+            
+            $redirectUrl = BASE_URL . '/students.php' . ($filterParams ? '?' . http_build_query($filterParams) : '');
+            header('Location: ' . $redirectUrl);
+            exit;
         } catch (Throwable $e) {
             // 🔥 LOG: แก้ไขนักเรียนไม่สำเร็จ
             log_activity('ERROR', 'students', $id, 
@@ -181,7 +211,22 @@ if ($action === 'delete' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 log_activity('DELETE', 'students', $id, sprintf("ลบนักเรียน ID:%d", $id));
             }
             
-            $messages[] = 'ลบเรียบร้อย';
+            // เก็บข้อความไว้ใน session
+            $_SESSION['success_message'] = 'ลบเรียบร้อย';
+            
+            // Redirect กลับพร้อม filter จาก session
+            $filterParams = [];
+            if (!empty($_SESSION['students_filter'])) {
+                $savedFilter = $_SESSION['students_filter'];
+                if (!empty($savedFilter['color'])) $filterParams['color'] = $savedFilter['color'];
+                if (!empty($savedFilter['class_level'])) $filterParams['class_level'] = $savedFilter['class_level'];
+                if (!empty($savedFilter['class_room'])) $filterParams['class_room'] = $savedFilter['class_room'];
+                if (!empty($savedFilter['q'])) $filterParams['q'] = $savedFilter['q'];
+            }
+            
+            $redirectUrl = BASE_URL . '/students.php' . ($filterParams ? '?' . http_build_query($filterParams) : '');
+            header('Location: ' . $redirectUrl);
+            exit;
         } catch (Throwable $e) {
             // 🔥 LOG: ลบนักเรียนไม่สำเร็จ
             log_activity('ERROR', 'students', $id, 
@@ -350,6 +395,16 @@ $q         = trim($_GET['q'] ?? '');
 $page      = max(1, (int)($_GET['page'] ?? 1));
 $perPage   = 20;
 
+// ถ้ามี filter ใน URL ให้เก็บลง session
+if ($color !== '' || $classLvl !== '' || $classRm > 0 || $q !== '') {
+    $_SESSION['students_filter'] = [
+        'color' => $color,
+        'class_level' => $classLvl,
+        'class_room' => $classRm,
+        'q' => $q
+    ];
+}
+
 $where = ["year_id=:year_id"];
 $params = [':year_id'=>$yearId];
 
@@ -387,6 +442,9 @@ $classOptions = [];
 for ($i=1; $i<=6; $i++) { $classOptions[] = "ป.{$i}"; }
 for ($i=1; $i<=6; $i++) { $classOptions[] = "ม.{$i}"; }
 ?>
+<!-- SweetAlert2 -->
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
 <main class="container py-4">
   <div class="row g-3">
     <!-- left: form add + import/export -->
@@ -400,6 +458,9 @@ for ($i=1; $i<=6; $i++) { $classOptions[] = "ม.{$i}"; }
           <?php endif; ?>
           <?php if ($messages): ?>
             <div class="alert alert-success"><?= implode('<br>', array_map('e',$messages)); ?></div>
+          <?php endif; ?>
+          <?php if (!empty($_SESSION['success_message'])): ?>
+            <div class="alert alert-success"><?= e($_SESSION['success_message']); unset($_SESSION['success_message']); ?></div>
           <?php endif; ?>
 
           <form method="post" class="row g-2" action="<?php echo BASE_URL; ?>/students.php">
@@ -558,10 +619,10 @@ for ($i=1; $i<=6; $i++) { $classOptions[] = "ม.{$i}"; }
                                 data-color="<?php echo e($s['color']); ?>">
                           แก้ไข
                         </button>
-                        <form method="post" action="<?php echo BASE_URL; ?>/students.php" onsubmit="return confirm('ลบรายชื่อนี้?');">
+                        <form method="post" action="<?php echo BASE_URL; ?>/students.php" class="delete-student-form">
                           <input type="hidden" name="action" value="delete">
                           <input type="hidden" name="id" value="<?php echo (int)$s['id']; ?>">
-                          <button class="btn btn-sm btn-outline-danger">ลบ</button>
+                          <button type="button" class="btn btn-sm btn-outline-danger delete-student-btn">ลบ</button>
                         </form>
                       </div>
                     </td>
@@ -694,4 +755,133 @@ if (editModal) {
     document.getElementById('edit-color').value = b.getAttribute('data-color');
   });
 }
+
+// บันทึกค่า filter ลง localStorage
+function saveFilters() {
+  const colorSelect = document.querySelector('select[name="color"]');
+  const levelSelect = document.querySelector('select[name="class_level"]');
+  const roomInput = document.querySelector('input[name="class_room"]');
+  const qInput = document.querySelector('input[name="q"]');
+  
+  if (colorSelect) localStorage.setItem('students_filter_color', colorSelect.value);
+  if (levelSelect) localStorage.setItem('students_filter_level', levelSelect.value);
+  if (roomInput) localStorage.setItem('students_filter_room', roomInput.value);
+  if (qInput) localStorage.setItem('students_filter_q', qInput.value);
+}
+
+// โหลดค่า filter จาก localStorage
+function loadFilters() {
+  const savedColor = localStorage.getItem('students_filter_color');
+  const savedLevel = localStorage.getItem('students_filter_level');
+  const savedRoom = localStorage.getItem('students_filter_room');
+  const savedQ = localStorage.getItem('students_filter_q');
+  
+  // ถ้ามีค่าจาก URL (GET) ให้ใช้ค่านั้น และบันทึกลง localStorage
+  const urlParams = new URLSearchParams(window.location.search);
+  const hasFilterParams = urlParams.has('color') || urlParams.has('class_level') || urlParams.has('class_room') || urlParams.has('q');
+  
+  // ยกเว้น action พิเศษที่ไม่ต้อง redirect (template, export)
+  const action = urlParams.get('action');
+  const skipActions = ['template', 'export_csv'];
+  
+  if (hasFilterParams) {
+    // มีการกรอง → บันทึกค่าปัจจุบัน
+    saveFilters();
+  } else if (!skipActions.includes(action)) {
+    // ไม่มีการกรองและไม่ใช่ action พิเศษ → โหลดค่าจาก localStorage และ redirect
+    if (savedColor || savedLevel || savedRoom || savedQ) {
+      const params = new URLSearchParams();
+      if (savedColor) params.set('color', savedColor);
+      if (savedLevel) params.set('class_level', savedLevel);
+      if (savedRoom) params.set('class_room', savedRoom);
+      if (savedQ) params.set('q', savedQ);
+      
+      window.location.href = '<?php echo BASE_URL; ?>/students.php?' + params.toString();
+      return; // หยุดการทำงานเพื่อรอ redirect
+    }
+  }
+}
+
+// เรียกใช้เมื่อโหลดหน้า
+loadFilters();
+
+// บันทึกค่าทุกครั้งที่มีการเปลี่ยนแปลง filter
+const filterForm = document.querySelector('form[method="get"]');
+if (filterForm) {
+  const filterInputs = filterForm.querySelectorAll('select, input[type="text"], input[type="number"]');
+  filterInputs.forEach(input => {
+    input.addEventListener('change', saveFilters);
+    input.addEventListener('input', saveFilters);
+  });
+}
+
+// บันทึก filter ก่อน submit form ทุกแบบ (POST forms)
+document.querySelectorAll('form[method="post"]').forEach(form => {
+  form.addEventListener('submit', function(e) {
+    // บันทึกค่า filter ปัจจุบันก่อน submit
+    saveFilters();
+    
+    // เพิ่ม hidden input สำหรับ filter ลงใน form
+    const savedColor = localStorage.getItem('students_filter_color') || '';
+    const savedLevel = localStorage.getItem('students_filter_level') || '';
+    const savedRoom = localStorage.getItem('students_filter_room') || '';
+    const savedQ = localStorage.getItem('students_filter_q') || '';
+    
+    // ลบ hidden input เก่าถ้ามี
+    form.querySelectorAll('input[name^="filter_"]').forEach(inp => inp.remove());
+    
+    // เพิ่ม hidden input ใหม่
+    if (savedColor) {
+      const input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = 'filter_color';
+      input.value = savedColor;
+      form.appendChild(input);
+    }
+    if (savedLevel) {
+      const input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = 'filter_level';
+      input.value = savedLevel;
+      form.appendChild(input);
+    }
+    if (savedRoom) {
+      const input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = 'filter_room';
+      input.value = savedRoom;
+      form.appendChild(input);
+    }
+    if (savedQ) {
+      const input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = 'filter_q';
+      input.value = savedQ;
+      form.appendChild(input);
+    }
+  });
+});
+
+// SweetAlert2 สำหรับปุ่มลบ
+document.addEventListener('click', function(e) {
+  if (e.target && e.target.classList.contains('delete-student-btn')) {
+    e.preventDefault();
+    const form = e.target.closest('form');
+    
+    Swal.fire({
+      title: 'ยืนยันการลบ',
+      text: 'ต้องการลบนักเรียนคนนี้ใช่หรือไม่?',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      cancelButtonColor: '#6c757d',
+      confirmButtonText: 'ใช่, ลบเลย',
+      cancelButtonText: 'ยกเลิก'
+    }).then((result) => {
+      if (result.isConfirmed) {
+        form.submit();
+      }
+    });
+  }
+});
 </script>

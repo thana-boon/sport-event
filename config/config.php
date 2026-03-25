@@ -21,7 +21,7 @@ if (session_status() === PHP_SESSION_NONE) {
 }
 
 if (!defined('SESSION_INACTIVITY_TIMEOUT')) {
-    define('SESSION_INACTIVITY_TIMEOUT', 15 * 60); // 15 นาที (วินาที)
+    define('SESSION_INACTIVITY_TIMEOUT', 60 * 60); // 60 นาที (วินาที)
 }
 
 if (!empty($_SESSION['admin'])) {

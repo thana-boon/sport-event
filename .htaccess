@@ -5,17 +5,140 @@ Options -Indexes
 RewriteEngine On
 RewriteBase /sport-event/
 
-# ไม่ไปยุ่งกับ URL ที่อยู่แล้วใน /public/
-RewriteCond %{REQUEST_URI} !^/sport-event/public/
+# === REDIRECT URL เก่าไปที่ URL ใหม่ (ใช้ THE_REQUEST เพื่อป้องกัน loop) ===
 
-# root -> public/staff/
-RewriteRule ^$ public/staff/ [L,R=302]
+# Redirect staff files
+RewriteCond %{THE_REQUEST} ^GET\ /sport-event/public/staff/login\.php
+RewriteRule ^public/staff/login\.php$ /sport-event/login [R=301,L]
 
-# /staff -> public/staff/
-RewriteRule ^staff/?$ public/staff/ [L,R=302]
+RewriteCond %{THE_REQUEST} ^GET\ /sport-event/public/staff/index\.php
+RewriteRule ^public/staff/index\.php$ /sport-event/index [R=301,L]
 
-# /admin -> public/  (admin site)
-RewriteRule ^admin/?$ public/ [L,R=302]
+RewriteCond %{THE_REQUEST} ^GET\ /sport-event/public/staff/register\.php
+RewriteRule ^public/staff/register\.php$ /sport-event/register [R=301,L]
 
-# /referee -> public/referee/
-RewriteRule ^referee/?$ public/referee/ [L,R=302]
+RewriteCond %{THE_REQUEST} ^GET\ /sport-event/public/staff/logout\.php
+RewriteRule ^public/staff/logout\.php$ /sport-event/logout [R=301,L]
+
+# Redirect referee files
+RewriteCond %{THE_REQUEST} ^GET\ /sport-event/public/referee/login\.php
+RewriteRule ^public/referee/login\.php$ /sport-event/referee/login [R=301,L]
+
+RewriteCond %{THE_REQUEST} ^GET\ /sport-event/public/referee/index\.php
+RewriteRule ^public/referee/index\.php$ /sport-event/referee [R=301,L]
+
+RewriteCond %{THE_REQUEST} ^GET\ /sport-event/public/referee/players\.php
+RewriteRule ^public/referee/players\.php$ /sport-event/referee/players [R=301,L]
+
+RewriteCond %{THE_REQUEST} ^GET\ /sport-event/public/referee/logout\.php
+RewriteRule ^public/referee/logout\.php$ /sport-event/referee/logout [R=301,L]
+
+# Redirect admin files
+RewriteCond %{THE_REQUEST} ^GET\ /sport-event/public/index\.php
+RewriteRule ^public/index\.php$ /sport-event/admin [R=301,L]
+
+RewriteCond %{THE_REQUEST} ^GET\ /sport-event/public/login\.php
+RewriteRule ^public/login\.php$ /sport-event/admin/login [R=301,L]
+
+RewriteCond %{THE_REQUEST} ^GET\ /sport-event/public/logout\.php
+RewriteRule ^public/logout\.php$ /sport-event/admin/logout [R=301,L]
+
+RewriteCond %{THE_REQUEST} ^GET\ /sport-event/public/students\.php
+RewriteRule ^public/students\.php$ /sport-event/admin/students [R=301,L]
+
+RewriteCond %{THE_REQUEST} ^GET\ /sport-event/public/sports\.php
+RewriteRule ^public/sports\.php$ /sport-event/admin/sports [R=301,L]
+
+RewriteCond %{THE_REQUEST} ^GET\ /sport-event/public/categories\.php
+RewriteRule ^public/categories\.php$ /sport-event/admin/categories [R=301,L]
+
+RewriteCond %{THE_REQUEST} ^GET\ /sport-event/public/matches\.php
+RewriteRule ^public/matches\.php$ /sport-event/admin/matches [R=301,L]
+
+RewriteCond %{THE_REQUEST} ^GET\ /sport-event/public/athletics\.php
+RewriteRule ^public/athletics\.php$ /sport-event/admin/athletics [R=301,L]
+
+RewriteCond %{THE_REQUEST} ^GET\ /sport-event/public/player\.php
+RewriteRule ^public/player\.php$ /sport-event/admin/player [R=301,L]
+
+RewriteCond %{THE_REQUEST} ^GET\ /sport-event/public/users\.php
+RewriteRule ^public/users\.php$ /sport-event/admin/users [R=301,L]
+
+RewriteCond %{THE_REQUEST} ^GET\ /sport-event/public/years\.php
+RewriteRule ^public/years\.php$ /sport-event/admin/years [R=301,L]
+
+RewriteCond %{THE_REQUEST} ^GET\ /sport-event/public/logs\.php
+RewriteRule ^public/logs\.php$ /sport-event/admin/logs [R=301,L]
+
+RewriteCond %{THE_REQUEST} ^GET\ /sport-event/public/backup\.php
+RewriteRule ^public/backup\.php$ /sport-event/admin/backup [R=301,L]
+
+RewriteCond %{THE_REQUEST} ^GET\ /sport-event/public/summary\.php
+RewriteRule ^public/summary\.php$ /sport-event/admin/summary [R=301,L]
+
+RewriteCond %{THE_REQUEST} ^GET\ /sport-event/public/regis\.php
+RewriteRule ^public/regis\.php$ /sport-event/admin/regis [R=301,L]
+
+RewriteCond %{THE_REQUEST} ^GET\ /sport-event/public/referee\.php
+RewriteRule ^public/referee\.php$ /sport-event/admin/referee [R=301,L]
+
+RewriteCond %{THE_REQUEST} ^GET\ /sport-event/public/reports\.php
+RewriteRule ^public/reports\.php$ /sport-event/admin/reports [R=301,L]
+
+RewriteCond %{THE_REQUEST} ^GET\ /sport-event/public/reports_booklet\.php
+RewriteRule ^public/reports_booklet\.php$ /sport-event/admin/reports_booklet [R=301,L]
+
+RewriteCond %{THE_REQUEST} ^GET\ /sport-event/public/reports_athletics\.php
+RewriteRule ^public/reports_athletics\.php$ /sport-event/admin/reports_athletics [R=301,L]
+
+RewriteCond %{THE_REQUEST} ^GET\ /sport-event/public/upload_cover\.php
+RewriteRule ^public/upload_cover\.php$ /sport-event/admin/upload_cover [R=301,L]
+
+# === URL REWRITING (URL สั้น → ไฟล์จริง) ===
+
+# กฎสำหรับ /sport-event/referee/* → public/referee/*
+RewriteRule ^referee/?$ public/referee/index.php [L]
+RewriteRule ^referee/login/?$ public/referee/login.php [L]
+RewriteRule ^referee/players/?$ public/referee/players.php [L]
+RewriteRule ^referee/logout/?$ public/referee/logout.php [L]
+RewriteRule ^referee/(.+)$ public/referee/$1 [L]
+
+# กฎสำหรับ /sport-event/* (staff files - root level) → public/staff/*
+RewriteRule ^login/?$ public/staff/login.php [L]
+RewriteRule ^index/?$ public/staff/index.php [L]
+RewriteRule ^register/?$ public/staff/register.php [L]
+RewriteRule ^logout/?$ public/staff/logout.php [L]
+RewriteRule ^staff/?$ public/staff/index.php [L]
+
+# กฎสำหรับ /sport-event/admin/* (admin files) → public/*
+RewriteRule ^admin/?$ public/index.php [L]
+RewriteRule ^admin/login/?$ public/login.php [L]
+RewriteRule ^admin/logout/?$ public/logout.php [L]
+RewriteRule ^admin/students/?$ public/students.php [L]
+RewriteRule ^admin/sports/?$ public/sports.php [L]
+RewriteRule ^admin/categories/?$ public/categories.php [L]
+RewriteRule ^admin/matches/?$ public/matches.php [L]
+RewriteRule ^admin/athletics/?$ public/athletics.php [L]
+RewriteRule ^admin/player/?$ public/player.php [L]
+RewriteRule ^admin/users/?$ public/users.php [L]
+RewriteRule ^admin/years/?$ public/years.php [L]
+RewriteRule ^admin/logs/?$ public/logs.php [L]
+RewriteRule ^admin/backup/?$ public/backup.php [L]
+RewriteRule ^admin/reports/?$ public/reports.php [L]
+RewriteRule ^admin/reports_athletics/?$ public/reports_athletics.php [L]
+RewriteRule ^admin/reports_athletics_schedule/?$ public/reports_athletics_schedule.php [L]
+RewriteRule ^admin/reports_athletics_export/?$ public/reports_athletics_export.php [L]
+RewriteRule ^admin/reports_export_registration/?$ public/reports_export_registration.php [L]
+RewriteRule ^admin/reports_matches/?$ public/reports_matches.php [L]
+RewriteRule ^admin/reports_booklet/?$ public/reports_booklet.php [L]
+RewriteRule ^admin/summary/?$ public/summary.php [L]
+RewriteRule ^admin/upload_logo/?$ public/upload_logo.php [L]
+RewriteRule ^admin/upload_cover/?$ public/upload_cover.php [L]
+RewriteRule ^admin/regis/?$ public/regis.php [L]
+RewriteRule ^admin/referee/?$ public/referee.php [L]
+RewriteRule ^admin/referee_api/?$ public/referee_api.php [L]
+RewriteRule ^admin/(.+)$ public/$1 [L]
+
+# Default: root → staff
+RewriteRule ^$ public/staff/index.php [L]
+

@@ -28,6 +28,9 @@ if (!$yearId) {
     exit;
 }
 
+// โหลด SweetAlert2
+echo '<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>';
+
 /* =========================================================
    ACTIONS
    ========================================================= */
@@ -348,9 +351,9 @@ include __DIR__ . '/../includes/navbar.php';
               </form>
 
               <?php if ($prevYearId): ?>
-              <form method="post" action="<?php echo BASE_URL; ?>/categories.php" onsubmit="return confirm('คัดลอกค่าจากปีที่แล้วมาปีนี้?');">
+              <form method="post" action="<?php echo BASE_URL; ?>/categories.php" class="copy-prev-year-form">
                 <input type="hidden" name="action" value="copy_prev_year">
-                <button class="btn btn-outline-secondary" type="submit">คัดลอกจากปีที่แล้ว</button>
+                <button class="btn btn-outline-secondary copy-prev-year-btn" type="button">คัดลอกจากปีที่แล้ว</button>
               </form>
               <?php endif; ?>
             </div>
@@ -381,7 +384,7 @@ include __DIR__ . '/../includes/navbar.php';
                       <?php echo ((int)$r['eff_active']===1) ? '<span class="badge bg-success">เปิด</span>' : '<span class="badge bg-secondary">ปิด</span>'; ?>
                     </td>
                     <td>
-                      <div class="d-flex gap-2 flex-wrap">
+                      <div class="btn-group" role="group">
                         <button class="btn btn-sm btn-outline-primary"
                                 data-bs-toggle="modal" data-bs-target="#editModal"
                                 data-id="<?php echo (int)$r['id']; ?>"
@@ -391,12 +394,12 @@ include __DIR__ . '/../includes/navbar.php';
                                 data-active="<?php echo (int)$r['eff_active']; ?>">
                           แก้ไข
                         </button>
-                        <form method="post" action="<?php echo BASE_URL; ?>/categories.php" onsubmit="return confirm('ต้องการลบประเภทนี้?');">
-                          <input type="hidden" name="action" value="delete">
-                          <input type="hidden" name="id" value="<?php echo (int)$r['id']; ?>">
-                          <button class="btn btn-sm btn-outline-danger">ลบ</button>
-                        </form>
+                        <button type="button" class="btn btn-sm btn-outline-danger delete-category-btn" data-id="<?php echo (int)$r['id']; ?>">ลบ</button>
                       </div>
+                      <form method="post" action="<?php echo BASE_URL; ?>/categories.php" class="delete-category-form d-none" data-id="<?php echo (int)$r['id']; ?>">
+                        <input type="hidden" name="action" value="delete">
+                        <input type="hidden" name="id" value="<?php echo (int)$r['id']; ?>">
+                      </form>
                     </td>
                   </tr>
                 <?php endforeach; endif; ?>
@@ -466,4 +469,51 @@ if (editModal) {
     document.getElementById('edit-active').checked    = (b.getAttribute('data-active') === '1');
   });
 }
+
+// SweetAlert2 สำหรับปุ่มลบประเภท
+document.addEventListener('click', function(e) {
+  if (e.target && e.target.classList.contains('delete-category-btn')) {
+    e.preventDefault();
+    const categoryId = e.target.getAttribute('data-id');
+    const form = document.querySelector('.delete-category-form[data-id="' + categoryId + '"]');
+    
+    Swal.fire({
+      title: 'ยืนยันการลบ',
+      text: 'ต้องการลบประเภทนี้ใช่หรือไม่?',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      cancelButtonColor: '#6c757d',
+      confirmButtonText: 'ใช่, ลบเลย',
+      cancelButtonText: 'ยกเลิก'
+    }).then((result) => {
+      if (result.isConfirmed) {
+        form.submit();
+      }
+    });
+  }
+});
+
+// SweetAlert2 สำหรับปุ่มคัดลอกจากปีที่แล้ว
+document.addEventListener('click', function(e) {
+  if (e.target && e.target.classList.contains('copy-prev-year-btn')) {
+    e.preventDefault();
+    const form = e.target.closest('form');
+    
+    Swal.fire({
+      title: 'ยืนยันการคัดลอก',
+      text: 'คัดลอกค่าจากปีที่แล้วมาปีนี้ใช่หรือไม่?',
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonColor: '#0d6efd',
+      cancelButtonColor: '#6c757d',
+      confirmButtonText: 'ใฌ่, คัดลอกเลย',
+      cancelButtonText: 'ยกเลิก'
+    }).then((result) => {
+      if (result.isConfirmed) {
+        form.submit();
+      }
+    });
+  }
+});
 </script>
