@@ -1,19 +1,23 @@
 <?php
+require_once __DIR__ . '/../vendor/autoload.php';
+
+$dotenv = Dotenv\Dotenv::createImmutable(__DIR__ . '/../');
+$dotenv->load();
+
+$dotenv->required(['APP_NAME', 'APP_ENV', 'BASE_URL', 'DB_DRIVER', 'DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_USER', 'DB_PASS']);
+
 // ตั้งค่าแอพ
-define('APP_NAME', 'SPORT-EVENT');
+define('APP_NAME', $_ENV['APP_NAME']);
+define('BASE_URL',  $_ENV['BASE_URL']);
+define('APP_ENV',   $_ENV['APP_ENV']);
 
-// *** แก้ path ให้ตรงโปรเจกต์ของคุณบน XAMPP ***
-define('BASE_URL', '/sport-event/public'); // << สำคัญ: มีสแลชนำหน้า และไม่มีสแลชท้าย
-
-define('APP_ENV', 'local'); // local | production
-
-// ตั้งค่า DB (แก้ให้ตรงกับเครื่องของคุณ)
-define('DB_DRIVER', 'mysql');  // mysql | sqlite | pgsql
-define('DB_HOST', '127.0.0.1');
-define('DB_PORT', '3306');
-define('DB_NAME', 'school_app');
-define('DB_USER', 'root');
-define('DB_PASS', '');
+// ตั้งค่า DB
+define('DB_DRIVER', $_ENV['DB_DRIVER']);
+define('DB_HOST',   $_ENV['DB_HOST']);
+define('DB_PORT',   $_ENV['DB_PORT']);
+define('DB_NAME',   $_ENV['DB_NAME']);
+define('DB_USER',   $_ENV['DB_USER']);
+define('DB_PASS',   $_ENV['DB_PASS']);
 
 // START: session inactivity timeout handling
 if (session_status() === PHP_SESSION_NONE) {

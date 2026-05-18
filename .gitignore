@@ -1,1 +1,33 @@
-vendor/dompdf/dompdf
+# Environment & secrets
+.env
+.env.*
+!.env.example
+
+# Composer dependencies
+/vendor/
+
+# Uploaded files
+/public/uploads/
+
+# Backups
+/public/backups/
+
+# Error logs
+/public/error_log
+error_log
+*.log
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# SQLite database (if used)
+*.sqlite
+*.sqlite3
